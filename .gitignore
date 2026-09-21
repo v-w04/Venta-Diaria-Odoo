@@ -1,0 +1,19 @@
+# Token de clasp — NUNCA va a git
+.clasprc.json
+~/.clasprc.json
+
+# Nada de credenciales en el repo: todo vive en Script Properties
+.env
+*.key
+*.pem
+credenciales*.json
+secrets*.json
+
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+
+# Respaldos del codigo anterior: pueden traer credenciales viejas
+respaldo-codigo-viejo/
+respaldo-*/

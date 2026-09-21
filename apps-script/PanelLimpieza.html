@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#6b6b6b; --line:#e6e6e6;
+    --acc:#0a66c2; --danger:#c0392b; --ok:#1e8e3e; --soft:#f7f8fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:16px;font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       color:var(--fg);background:var(--bg)}
+  h1{font-size:16px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+
+  .medidor{background:var(--soft);border:1px solid var(--line);border-radius:8px;
+           padding:10px 12px;margin-bottom:12px}
+  .barra{height:8px;background:#e9ecef;border-radius:99px;overflow:hidden;margin-top:6px}
+  .barra > i{display:block;height:100%;background:var(--acc)}
+  .barra.alto > i{background:var(--danger)}
+  .cifras{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+  .cifras b{color:var(--fg)}
+
+  .acciones{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+  button{font:inherit;padding:7px 13px;border-radius:6px;border:1px solid var(--line);
+         background:#fff;cursor:pointer}
+  button:hover{background:var(--soft)}
+  button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.dan{background:var(--danger);border-color:var(--danger);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  .link{background:none;border:none;color:var(--acc);cursor:pointer;padding:2px 4px;
+        text-decoration:underline;font-size:12.5px}
+
+  .tabla{border:1px solid var(--line);border-radius:8px;overflow:auto;max-height:330px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th{position:sticky;top:0;background:var(--soft);text-align:left;padding:8px 10px;
+     border-bottom:1px solid var(--line);font-weight:600;z-index:1}
+  td{padding:7px 10px;border-bottom:1px solid #f1f1f1;vertical-align:middle}
+  tr.prot{color:var(--muted);background:#fcfcfd}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;
+       background:#eef2f6;color:#41566b}
+  .tag.p{background:#e6f4ea;color:var(--ok)}
+  .tag.v{background:#fdecea;color:var(--danger)}
+  .pie{margin-top:12px;font-size:12.5px;color:var(--muted)}
+  .aviso{background:#fff8e1;border:1px solid #ffe08a;border-radius:8px;padding:10px 12px;
+         font-size:12.5px;margin-bottom:12px}
+  #resultado{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;display:none;
+             white-space:pre-wrap}
+  #resultado.ok{background:#e6f4ea;border:1px solid #b7e1c4;display:block}
+  #resultado.err{background:#fdecea;border:1px solid #f5c6c2;display:block}
+  label.chk{display:flex;align-items:center;gap:6px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<h1>🧹 Limpiar hojas que no uso</h1>
+<p class="sub">Solo se quedan las hojas del sistema (candado). Todo lo demás se puede borrar.</p>
+
+<div class="medidor">
+  <div class="cifras">
+    <span>Celdas del libro: <b id="mTotal">…</b> de 10,000,000</span>
+    <span id="mPct"></span>
+  </div>
+  <div class="barra" id="mBarra"><i id="mFill" style="width:0"></i></div>
+</div>
+
+<div class="aviso" id="avisoTope" style="display:none">
+  ⚠️ El libro está en el tope de celdas. Mientras no bajes de 10,000,000 la importación
+  de Odoo va a seguir fallando con <i>«Esta acción aumentará el número de celdas…»</i>.
+</div>
+
+<div class="acciones">
+  <button class="link" onclick="marcar(true)">Marcar todas las sugeridas</button>
+  <button class="link" onclick="marcar(false)">Desmarcar todo</button>
+  <span style="flex:1"></span>
+  <label class="chk"><input type="checkbox" id="respaldo" checked> Hacer respaldo antes</label>
+</div>
+
+<div class="tabla">
+  <table>
+    <thead><tr>
+      <th style="width:34px"></th>
+      <th>Hoja</th>
+      <th>Estado</th>
+      <th class="num">Filas con datos</th>
+      <th class="num">Cuadrícula</th>
+      <th class="num">Celdas</th>
+    </tr></thead>
+    <tbody id="cuerpo"><tr><td colspan="6" style="padding:20px">Leyendo el libro…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="acciones" style="margin-top:12px">
+  <button class="dan" id="btnBorrar" onclick="borrar()" disabled>Borrar seleccionadas</button>
+  <button class="pri" onclick="compactar()">📐 Compactar las que se quedan</button>
+  <span class="pie" id="sel"></span>
+</div>
+
+<p class="pie">
+  <b>Compactar</b> no borra ningún dato: recorta las filas y columnas vacías que cada hoja
+  tiene reservadas de más. Suele liberar millones de celdas por sí solo.
+</p>
+
+<div id="resultado"></div>
+
+<script>
+var DATOS = null;
+
+function fmt(n){ return Number(n).toLocaleString('es-MX'); }
+
+function pintar(d){
+  DATOS = d;
+  document.getElementById('mTotal').textContent = fmt(d.total);
+  var pct = Math.round(d.total / d.limite * 100);
+  document.getElementById('mPct').textContent = pct + '% · ' + d.nHojas + ' hojas';
+  document.getElementById('mFill').style.width = Math.min(100, pct) + '%';
+  if (pct >= 90) {
+    document.getElementById('mBarra').classList.add('alto');
+    document.getElementById('avisoTope').style.display = 'block';
+  }
+
+  var html = '';
+  d.hojas.forEach(function(h, i){
+    html += '<tr class="' + (h.protegida ? 'prot' : '') + '">' +
+      '<td>' + (h.protegida ? '🔒' :
+        '<input type="checkbox" class="sel" data-n="' + i + '" onchange="contar()">') + '</td>' +
+      '<td><b>' + esc(h.nombre) + '</b></td>' +
+      '<td><span class="tag ' + (h.protegida ? 'p' : (h.conDatos <= 2 ? 'v' : '')) + '">' +
+        esc(h.motivo) + '</span></td>' +
+      '<td class="num">' + fmt(Math.max(0, h.conDatos - 1)) + '</td>' +
+      '<td class="num">' + fmt(h.filas) + ' × ' + fmt(h.cols) + '</td>' +
+      '<td class="num">' + fmt(h.celdas) + '</td>' +
+    '</tr>';
+  });
+  document.getElementById('cuerpo').innerHTML = html;
+  contar();
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+
+function marcar(v){
+  document.querySelectorAll('.sel').forEach(function(c){
+    var h = DATOS.hojas[+c.dataset.n];
+    c.checked = v ? !!h.sugerida : false;
+  });
+  contar();
+}
+
+function seleccionadas(){
+  var out = [];
+  document.querySelectorAll('.sel:checked').forEach(function(c){
+    out.push(DATOS.hojas[+c.dataset.n]);
+  });
+  return out;
+}
+
+function contar(){
+  var s = seleccionadas();
+  var celdas = s.reduce(function(a,h){ return a + h.celdas; }, 0);
+  document.getElementById('sel').textContent =
+    s.length ? (s.length + ' hoja(s) · liberaría ' + fmt(celdas) + ' celdas') : '';
+  document.getElementById('btnBorrar').disabled = !s.length;
+}
+
+function ocupado(v){
+  document.querySelectorAll('button').forEach(function(b){ b.disabled = v; });
+  if (!v) contar();
+}
+
+function mostrar(clase, texto){
+  var r = document.getElementById('resultado');
+  r.className = clase; r.textContent = texto;
+}
+
+function borrar(){
+  var s = seleccionadas();
+  if (!s.length) return;
+  var nombres = s.map(function(h){ return h.nombre; });
+  if (!confirm('Se van a borrar ' + nombres.length + ' hoja(s):\n\n' +
+      nombres.slice(0,25).join('\n') + (nombres.length>25?'\n…':'') +
+      '\n\nEsto no se puede deshacer. ¿Continuar?')) return;
+
+  ocupado(true);
+  mostrar('', 'Borrando…');
+  document.getElementById('resultado').className = 'ok';
+  google.script.run
+    .withSuccessHandler(function(r){
+      var t = '✅ Borradas: ' + r.borradas.length + '\n' +
+              'Celdas liberadas: ' + fmt(r.liberadas) + '\n' +
+              'Libro ahora: ' + fmt(r.despues) + ' celdas';
+      if (r.respaldo) t += '\nRespaldo: ' + r.respaldo;
+      if (r.rechazadas.length) t += '\nNo se pudieron borrar: ' + r.rechazadas.join(', ');
+      mostrar('ok', t);
+      cargar();
+    })
+    .withFailureHandler(function(e){ ocupado(false); mostrar('err', '❌ ' + e.message); })
+    .lpBorrarHojas(nombres, document.getElementById('respaldo').checked);
+}
+
+function compactar(){
+  ocupado(true);
+  mostrar('ok', 'Compactando…');
+  google.script.run
+    .withSuccessHandler(function(r){
+      mostrar('ok', '✅ Compactado\nCeldas liberadas: ' + fmt(r.liberadas) +
+                    '\nLibro ahora: ' + fmt(r.despues) + ' celdas' +
+                    '\nHojas recortadas: ' + r.detalle.length);
+      cargar();
+    })
+    .withFailureHandler(function(e){ ocupado(false); mostrar('err', '❌ ' + e.message); })
+    .lpCompactar(null);
+}
+
+function cargar(){
+  google.script.run
+    .withSuccessHandler(function(d){ pintar(d); ocupado(false); })
+    .withFailureHandler(function(e){ mostrar('err', '❌ ' + e.message); })
+    .lpListarHojas();
+}
+
+cargar();
+</script>
+</body>
+</html>
