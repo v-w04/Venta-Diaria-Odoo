@@ -356,17 +356,13 @@ function categoriaOficial_(cat) {
   return String(cat);
 }
 
-/** Cuánto suma MSI a la comisión: lo más repetido en el histórico. */
+/**
+ * Cuánto suma MSI a la comisión: 4.5 puntos, confirmado por el KAM (10/09/2026).
+ * No se deduce del pegado porque Table Capture trae los % redondeados
+ * (14.5% llega como "15%").
+ */
 function msiExtra_(hist) {
-  var c = {};
-  hist.forEach(function (k) {
-    if (k.comCup === '' || k.comMsi === '' || k.comCup === undefined || k.comMsi === undefined) return;
-    var d = Math.round((k.comMsi - k.comCup) * 1000) / 1000;
-    if (d > 0) c[d] = (c[d] || 0) + 1;
-  });
-  var mejor = MSI_EXTRA_DEF, n = 0;
-  Object.keys(c).forEach(function (d) { if (c[d] > n) { n = c[d]; mejor = Number(d); } });
-  return mejor;
+  return MSI_EXTRA_DEF;
 }
 
 /**
@@ -525,7 +521,7 @@ function procesarKillers_() {
   res.sinCategoria = a.sinCategoria;
   res.promociones = a.promociones;
   res.promoCategoria = a.promoCategoria || 0;
-  res.salieron = Math.max(0, antes - a.total + a.entraron);
+  res.salieron = a.salieron || 0;
 
   sh.clearContents();
   logOK_('KILLERS', 'Carga ' + carga.etiqueta + ' procesada', res);
@@ -893,6 +889,9 @@ function reconstruirActivos_() {
   }
   res.total = filas.length;
   res.promociones = promos.length;
+  var ahoraSkus = {};
+  filas.forEach(function (f) { ahoraSkus[sku_(f[0])] = true; });
+  res.salieron = Object.keys(previos).filter(function (k) { return k && !ahoraSkus[k]; }).length;
   setProp_('KILLERS_ACTIVOS_N', String(filas.length));
   return res;
 }
