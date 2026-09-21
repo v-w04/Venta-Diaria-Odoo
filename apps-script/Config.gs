@@ -80,8 +80,9 @@ var CFG = {
   CORREO_CVA: 'victor.walmart.04@gmail.com',
 
   // ── Importación desde Odoo ──────────────────────────────────────────────
-  DIAS_VENTANA: 7,
-  MAX_LINEAS_CORRIDA: 1000,
+  DIAS_VENTANA: 7,          // corrida normal: líneas nuevas (id > última) de 7 días
+  DIAS_BARRIDO: 2,          // barrido cada hora: órdenes confirmadas tarde
+  MAX_LINEAS_CORRIDA: 3000, // tope por corrida (se corta a los 4 min de todos modos)
   ESTADOS_SO: ['sale', 'done'],
 
   // ── Retención (lo que evita volver al tope de 10M celdas) ───────────────

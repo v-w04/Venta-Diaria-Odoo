@@ -71,11 +71,14 @@ function importarVentas_() {
   //  NORMAL   id > última importada: casi siempre una llamada.
   //  BARRIDO  toda la ventana de 7 días, cada hora, para recoger órdenes
   //           confirmadas tarde (id menor que la marca de agua).
-  var desde = new Date(Date.now() - CFG.DIAS_VENTANA * 86400000);
-  var desdeStr = Utilities.formatDate(desde, 'UTC', 'yyyy-MM-dd HH:mm:ss');
-
   var ultimoId = Number(prop_('ULTIMO_ID_LINEA', '0'));
   var tocaBarrido = (Date.now() - Number(prop_('ULTIMO_BARRIDO', '0'))) > 3600000;
+
+  // El barrido mira una ventana corta (2 días) para que quepa completa en una
+  // corrida; la corrida normal avanza por id y no necesita ventana grande.
+  var dias = (tocaBarrido || !ultimoId) ? CFG.DIAS_BARRIDO : CFG.DIAS_VENTANA;
+  var desde = new Date(Date.now() - dias * 86400000);
+  var desdeStr = Utilities.formatDate(desde, 'UTC', 'yyyy-MM-dd HH:mm:ss');
 
   var dominio = [['create_date', '>=', desdeStr], ['state', 'in', CFG.ESTADOS_SO]];
   var company = odooCompanyId_();
@@ -102,6 +105,12 @@ function importarVentas_() {
 
   var maxId = ultimoId;
   lineas.forEach(function (l) { if (Number(l.id) > maxId) maxId = Number(l.id); });
+
+  // Solo se procesa lo que aún no está en Órdenes de venta. Lo que ya está ahí
+  // ya se repartió a WALMART y PEDIDOS CVA (por este código o por el anterior).
+  // Así el barrido de cada hora no vuelve a pedir órdenes ni productos a Odoo.
+  var yaEstan = idsDeHoja_(hoja_(CFG.H.VENTAS, ENC_VENTAS));
+  lineas = lineas.filter(function (l) { return !yaEstan[String(l.id)]; });
 
   if (lineas.length) {
     // ── 2. Órdenes (1 llamada) ──────────────────────────────────────────
@@ -151,7 +160,7 @@ function importarVentas_() {
     });
 
     // ── 5. Repartir ─────────────────────────────────────────────────────
-    var nuevas = agregarSinDuplicar_(CFG.H.VENTAS, ENC_VENTAS, filas);
+    var nuevas = agregarSinDuplicar_(CFG.H.VENTAS, ENC_VENTAS, filas);   // segunda red
     res.nuevas = nuevas.length;
 
     var wm = filas.filter(function (f) { return esWalmart_(f[3]); });
