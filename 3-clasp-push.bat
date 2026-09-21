@@ -68,7 +68,6 @@ echo   %AZUL%%REGLA%%FIN%
 echo.
 echo %VERDE%  Listo. Codigo arriba.%FIN%
 echo.
-echo   %ROJO%^^!  RECARGA EL LIBRO CON F5%FIN%
 echo.
 call :LOGO
 exit /b 0

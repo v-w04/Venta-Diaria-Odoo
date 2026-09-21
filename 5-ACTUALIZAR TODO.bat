@@ -151,7 +151,6 @@ echo   %AZUL%%REGLA%%FIN%
 echo.
 echo %VERDE%  Listo. El codigo nuevo ya esta en Apps Script.%FIN%
 echo.
-echo   %ROJO%^^!  RECARGA EL LIBRO CON F5%FIN%
 echo      Sale el menu "Venta Diaria" arriba.
 if defined PRIMERA (
   echo.
