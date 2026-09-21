@@ -23,6 +23,8 @@ function onOpen() {
       .addSubMenu(ui.createMenu('Configuración')
         .addItem('🔌 Configurar Odoo…', 'configurarOdoo')
         .addItem('🧪 Probar conexión a Odoo', 'probarOdoo')
+        .addItem('🌐 Configurar acceso al site…', 'configurarSite')
+        .addItem('🔎 Revisar promociones del site', 'revisarPromocionesSite')
         .addItem('⏱️ Instalar / reinstalar triggers', 'instalarTriggers'))
     .addToUi();
 }

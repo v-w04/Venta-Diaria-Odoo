@@ -166,7 +166,7 @@ function importarVentas_() {
   }
 
   // La hoja SKU ASIGNADOS tiene que existir para que la llenes.
-  if (!libro_().getSheetByName(CFG.H.ASIGNADOS)) hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
+  asegurarAsignados_();
 
   // ── 6. Ventas Walmart que quedaron PENDIENTES en corridas anteriores ──
   var rp = revisarPendientesWalmart_();
@@ -248,4 +248,30 @@ function migrarOrdenesUnaVez_() {
   logOK_('MIGRAR', 'Se eliminó "' + CFG.HOJA_ORDENES_VIEJA + '"', {
     filasRevisadas: total, walmartPasadas: aWm, cvaPasadas: aCva
   });
+}
+
+
+/**
+ * SKU ASIGNADOS: si no existe, la crea ya con formato.
+ * A = SKU principal (el publicado, con precio y killer) · B en adelante = los
+ * SKUs de Odoo vinculados. Si ya existe, solo llena encabezados vacíos.
+ */
+function asegurarAsignados_() {
+  var ss = libro_();
+  if (ss.getSheetByName(CFG.H.ASIGNADOS)) { hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS); return; }
+  var sh = hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
+  var n = ENC_ASIGNADOS.length;
+  sh.getRange(1, 1, 1, n)
+    .setBackground('#1565c0').setFontColor('#ffffff').setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sh.getRange(1, 1).setBackground('#0d47a1')
+    .setNote('SKU publicado en Walmart (el que tiene precio en PRECIOS ERIK y killer).\n' +
+             'A la derecha, un SKU de Odoo vinculado por celda. Sin -MSI ni -2.');
+  sh.setRowHeight(1, 32);
+  sh.setFrozenRows(1);
+  sh.setFrozenColumns(1);
+  sh.setColumnWidths(1, n, 260);
+  sh.getRange(2, 1, sh.getMaxRows() - 1, n).setNumberFormat('@');   // SKUs como texto
+  sh.getRange(2, 1, sh.getMaxRows() - 1, 1).setFontWeight('bold').setBackground('#e3f2fd');
+  logOK_('ASIGNADOS', 'Hoja SKU ASIGNADOS creada con formato');
 }

@@ -34,6 +34,7 @@ var K_KAM   = 'KILLERS KAM';
 var K_ACT   = 'KILLERS ACTIVOS';
 var K_HIST  = 'KILLERS HISTORICO';
 var K_COM   = 'COMISIONES';
+var K_PROMO = 'PROMOCIONES';   // hoja vieja: se quita una vez
 
 var MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
              'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
@@ -211,11 +212,23 @@ function comisionesNormales_() {
   var m = {};
   var n = sh.getLastRow();
   if (n < 2) return m;
+  // Un nombre (categoría u OTROS NOMBRES) que apunta a comisiones DISTINTAS
+  // (ej. COMPUTO en Computadoras 10% y en Accesorios 15%) es ambiguo: no se
+  // usa, y esa comisión normal se deduce de lo que trae el killer.
+  var alias = {}, ambiguos = {};
   sh.getRange(2, 1, n - 1, 3).getValues().forEach(function (r) {
     var c = pct_(r[1]);
     if (!norm_(r[0]) || c === '') return;
     m[norm_(r[0])] = c;
-    String(r[2] || '').split(',').forEach(function (x) { if (norm_(x)) m[norm_(x)] = c; });
+    String(r[2] || '').split(',').forEach(function (x) {
+      var k = norm_(x);
+      if (!k || k === norm_(r[0])) return;
+      if (alias[k] !== undefined && Math.abs(alias[k] - c) > 0.0001) ambiguos[k] = true;
+      alias[k] = c;
+    });
+  });
+  Object.keys(alias).forEach(function (k) {
+    if (!ambiguos[k] && m[k] === undefined) m[k] = alias[k];
   });
   return m;
 }
@@ -321,17 +334,38 @@ function categoriasConocidas_() {
 
 function asegurarHojasKillers_() {
   var ss = libro_();
+  quitarHojasSobrantesUnaVez_();
   if (!ss.getSheetByName(K_PEGAR)) hoja_(K_PEGAR, null);
-  hoja_(K_KAM, ENC_K_KAM);
   hoja_(K_HIST, ENC_K_HIST);
   hoja_(K_ACT, ENC_K_ACT);
   comisionesNormales_();
+}
+
+/**
+ * UNA vez: quita KILLERS KAM (los killers del KAM ya llegan en el pegado del
+ * seller center) y PROMOCIONES (las promociones viven en el site). Solo se
+ * borran si no tienen datos capturados por ti.
+ */
+function quitarHojasSobrantesUnaVez_() {
+  if (prop_('HOJAS_SOBRANTES_QUITADAS') === '1') return;
+  var ss = libro_();
+  [K_KAM, K_PROMO].forEach(function (nombre) {
+    var sh = ss.getSheetByName(nombre);
+    if (!sh) return;
+    if (nombre === K_KAM && ultimaFilaColA_(sh) > 1) return;   // trae datos: se respeta
+    ss.deleteSheet(sh);
+    logOK_('KILLERS', 'Hoja quitada: ' + nombre);
+  });
+  setProp_('HOJAS_SOBRANTES_QUITADAS', '1');
 }
 
 /** Siguiente carga: número global y nombre del mes ("SEPTIEMBRE 2026-2"). */
 function nuevaCarga_() {
   var ahora = new Date();
   var mes = Utilities.formatDate(ahora, CFG.TZ, 'yyyy-MM');
+  // Si borraste KILLERS HISTORICO, la numeración del mes vuelve a empezar en -1
+  var shH = libro_().getSheetByName(K_HIST);
+  if (!shH || ultimaFilaColA_(shH) < 2) setProp_('KILLERS_CARGA_' + mes, '0');
   var nMes = Number(prop_('KILLERS_CARGA_' + mes, '0')) + 1;
   var nGlobal = Number(prop_('KILLERS_CARGA_N', '0')) + 1;
   setProp_('KILLERS_CARGA_' + mes, String(nMes));
@@ -360,9 +394,7 @@ function procesarKillers() {
       'KILLERS ACTIVOS: ' + r.activos + '  ·  con promoción: ' + r.promos +
       '  ·  por iniciar: ' + r.porIniciar + '\n' +
       'Salieron de ACTIVOS (ya no vienen en el seller center o vencieron): ' + r.salieron +
-      '\nPROMOCIONES: ' + (r.promociones || 0) + ' SKU(s) con comisión rebajada (deducida de las comisiones del pegado)' +
-      (r.sinCategoria ? '\n\nℹ️ ' + r.sinCategoria + ' sin categoría en la columna T de ACTIVOS. No es obligatoria: ' +
-                        'la promoción se deduce igual. Ponla solo si quieres el nombre de categoría exacto en PROMOCIONES.' : ''));
+      '\nCon promoción de comisión (columna X): ' + (r.promociones || 0));
   } catch (e) {
     logError_('KILLERS', e);
     avisar_('No se pudieron procesar los killers:\n\n' + e);
@@ -671,68 +703,9 @@ function reconstruirActivos_() {
     formatoActivos_(sh, filas.length);
   }
   res.total = filas.length;
-  res.promociones = escribirPromociones_(promos);
+  res.promociones = promos.length;
   setProp_('KILLERS_ACTIVOS_N', String(filas.length));
   return res;
-}
-
-var K_PROMO = 'PROMOCIONES';
-var ENC_K_PROMO = ['SKU', 'CATEGORIA', 'REDUCCION', 'COM NORMAL', 'COM FINAL',
-                   'COM NORMAL MSI', 'COM FINAL MSI', 'TIPO', 'DESDE', 'HASTA',
-                   'PUBLICACIONES', 'CATEGORIA ES', 'ORIGEN'];
-
-/**
- * PROMOCIONES: las promociones de comisión DEDUCIDAS de los killers vigentes.
- * A:C va tal cual lo pide "Cargar promociones" del site (SKU base sin -MSI ·
- * Categoría Walmart · Reducción en puntos): selecciona A2:C y pégalo allá.
- * Un renglón por SKU base; si sus publicaciones traen reducciones distintas,
- * gana la mayor (el site maneja una sola por SKU base).
- * TIPO: COMISION BASE = bajó la comisión de venta (Fotografía 10%→3%, el MSI
- *       sigue sumando 4.5 encima → 7.5%). SOLO MSI = la base quedó igual y lo
- *       que quitaron fue el cargo MSI (Videojuegos: MSI 14.5%→10%). Ojo: en el
- *       site una reducción de SOLO MSI también baja la clásica.
- */
-function escribirPromociones_(promos) {
-  var porBase = {};
-  promos.forEach(function (x) {
-    var b = skuBase_(x.k.sku);
-    var o = porBase[b];
-    if (!o) o = porBase[b] = { pubs: [], x: x };
-    o.pubs.push(x.k.sku);
-    if (x.pr.red > o.x.pr.red) o.x = x;
-  });
-  var todas = Object.keys(porBase).sort().map(function (b) {
-    var x = porBase[b].x, k = x.k, pr = x.pr;
-    var cat = categoriaOficial_(x.cat);
-    return [b, cat, Math.round(pr.red * 1000) / 10, pr.normal, Math.round((pr.normal - pr.redCla) * 1000) / 1000,
-            pr.normalMsi, Math.round((pr.normalMsi - pr.redMsi) * 1000) / 1000,
-            pr.redCla > 0.0001 ? 'COMISION BASE' : 'SOLO MSI', k.ini, k.fin,
-            porBase[b].pubs.join(', '), x.cat ? (pr.inferida ? 'INFERIDA' : 'CAPTURADA') : 'INFERIDA',
-            k.origen];
-  });
-  // Arriba: las que SÍ van al site (A2:C hasta donde acaben).
-  // Abajo, separadas: SOLO MSI, que NO se cargan en el site porque el site
-  // rebaja el SKU base completo (clásica y MSI). Esas las cuida este libro.
-  var base = todas.filter(function (f) { return f[7] === 'COMISION BASE'; });
-  var msi  = todas.filter(function (f) { return f[7] === 'SOLO MSI'; });
-  var vacia = function (txt) { var r = new Array(ENC_K_PROMO.length).fill(''); r[0] = txt; return r; };
-  var filas = base.slice();
-  if (msi.length) {
-    filas.push(vacia(''));
-    filas.push(vacia('▼ SOLO MSI — NO CARGAR EN EL SITE (bajaría también la clásica). Este libro ya las toma en cuenta.'));
-    filas = filas.concat(msi);
-  }
-  var sh = hoja_(K_PROMO, ENC_K_PROMO);
-  sh.getRange(1, 1, 1, ENC_K_PROMO.length).setValues([ENC_K_PROMO]);
-  var n0 = Math.max(ultimaFilaColA_(sh), sh.getLastRow());
-  if (n0 > 1) sh.getRange(2, 1, n0 - 1, Math.max(sh.getLastColumn(), ENC_K_PROMO.length)).clearContent();
-  if (filas.length) {
-    if (sh.getMaxRows() < filas.length + 1) sh.insertRowsAfter(sh.getMaxRows(), filas.length + 1 - sh.getMaxRows());
-    sh.getRange(2, 1, filas.length, ENC_K_PROMO.length).setValues(filas);
-    sh.getRange(2, 4, filas.length, 4).setNumberFormat('0.0%');
-    sh.getRange(2, 9, filas.length, 2).setNumberFormat('dd/MM/yyyy HH:mm');
-  }
-  return todas.length;
 }
 
 /** Llave con la que C busca el mínimo en PRECIOS ERIK (misma regla que minimoDe_). */

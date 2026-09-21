@@ -38,11 +38,9 @@ var CFG = {
     ALERTAS:  'Histórico de alertas',           // ventas Walmart bajo mínimo
     CVA:      'PEDIDOS CVA',                    // SKUs -CVA de cualquier plataforma
     K_PEGAR:  'KILLERS PEGAR',                  // pegado de Table Capture
-    K_KAM:    'KILLERS KAM',                    // killers autorizados por KAM
     K_ACT:    'KILLERS ACTIVOS',                // killers vigentes (lo genera el script)
     K_HIST:   'KILLERS HISTORICO',              // todos los killers, por mes
     K_COM:    'COMISIONES',                     // comisión normal por categoría
-    K_PROMO:  'PROMOCIONES',                    // promociones deducidas (para el site)
     LOG:      'LOG Ventas',                     // bitácora del script
     ASIGNADOS:'SKU ASIGNADOS'                   // SKUs vinculados a otro SKU
   },
