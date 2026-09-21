@@ -180,29 +180,6 @@ function registrarAlertas_(filas) {
   return nuevas.length;
 }
 
-/**
- * Menú: revisa las ventas de Walmart PENDIENTES y las de los últimos 7 días
- * que no tengan análisis. No re-evalúa ventas viejas: se compararían contra
- * el precio de hoy y llenarían el histórico de alertas falsas.
- */
-function revisarPreciosWalmart() {
-  var lock = candado_(30000);
-  if (!lock) { avisar_('Hay otra corrida en curso. Intenta en un minuto.'); return; }
-  try {
-    var r = revisarPendientesWalmart_(true);
-    logOK_('ALERTAS', 'Revisión manual de precios de Walmart', r);
-    avisar_('Revisión terminada\n\n' +
-            'Ventas revisadas: ' + r.revisadas + '\n' +
-            'Alertas nuevas: ' + r.alertas + '\n\n' +
-            'Quedó en WALMART y en Histórico de alertas. No se mandó ningún correo.');
-  } catch (e) {
-    logError_('ALERTAS', e);
-    avisar_('Falló la revisión:\n\n' + e);
-  } finally {
-    lock.releaseLock();
-  }
-}
-
 /** Resumen rápido para consultar sin abrir las hojas. */
 function resumenWalmart() {
   var sh = libro_().getSheetByName(CFG.H.WALMART);

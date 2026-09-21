@@ -106,11 +106,3 @@ function armarCorreoCVA_(filas) {
     '<p style="margin-top:20px;font-size:12px;color:#999">Venta Diaria Odoo 2026 · hoja PEDIDOS CVA</p>' +
   '</div>';
 }
-
-/** Menú: manda ya lo que esté pendiente, sin esperar la agrupación. */
-function enviarCorreoCVAPendiente() {
-  marcaCvaInicial_();
-  var ok = enviarCorreoCVA_(true);
-  avisar_(ok ? 'Correo enviado a ' + CFG.CORREO_CVA
-             : 'No hay ventas CVA nuevas que avisar.');
-}

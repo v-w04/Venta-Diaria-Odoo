@@ -43,7 +43,7 @@ function quitarTriggers(silencioso) {
   if (!silencioso) avisar_('Se quitaron ' + ts.length + ' trigger(s).');
 }
 
-/** Crea las hojas del sistema que falten. Las que ya existen no se tocan. */
+/** Crea las hojas del sistema que falten (lo usa instalarTriggers). */
 function crearHojas(silencioso) {
   hoja_(CFG.H.WALMART, ENC_WALMART);
   hoja_(CFG.H.VENTAS,  ENC_VENTAS);
@@ -104,23 +104,5 @@ function probarOdoo() {
   } catch (e) {
     logError_('PRUEBA', e);
     avisar_('❌ Falló la conexión a Odoo\n\n' + e);
-  }
-}
-
-/** Prueba de Site Sheet → PRECIOS ERIK. No gasta UrlFetch. */
-function probarPrecios() {
-  try {
-    var filas = leerMinimosSite_();
-    var t = tablaPrecios_();
-    avisar_('✅ Site Sheet responde\n\n' +
-      'SKUs en Precios EM Minimo: ' + filas.length + '\n' +
-      'SKUs hoy en PRECIOS ERIK (A–D): ' + t.nMinimos + '\n' +
-      'Cupones Walmart en P–Q: ' + t.nCupones + '\n\n' +
-      'Ejemplo:\n' + filas.slice(0, 3).map(function (f) {
-        return '  ' + f[1] + '  clásica $' + f[2] + ' · premium $' + f[3];
-      }).join('\n'));
-  } catch (e) {
-    logError_('PRUEBA', e);
-    avisar_('❌ No se pudo leer Site Sheet\n\n' + e);
   }
 }
