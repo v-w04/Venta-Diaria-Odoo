@@ -6,12 +6,12 @@
  *   Filas 1-2 encabezado · datos desde la fila 3
  *   A NOMBRE · B SKU GENERAL · C WALMART CLASICA · D WALMART PREMIUM
  *        → las escribe ESTE script con valores, desde Site Sheet
- *          (Precios EM Minimo). Ya no dependen de una fórmula.
+ *          (Precios EM Minimo + Precios CVA Minimo). Ya no dependen de una fórmula.
  *   E–M vacías
  *   N–O KILLERS · P–Q SIN -2 (cupones)
  *        → NO se tocan. Siguen como las tengas.
  *
- * Solo master EM. Los SKUs -CVA no se comparan contra mínimo.
+ * Dos masters: EM y CVA. Cada venta se compara contra el mínimo de su master.
  *
  * ⚠️ Nada de esto gasta UrlFetch: leer otro Google Sheet va por la API de
  * Sheets, que es otra bolsa. Por eso revisarPreciosAuto puede correr cada
@@ -44,16 +44,16 @@ function huellaSiteSheet_() {
 }
 
 /**
- * Lee Precios EM Minimo de Site Sheet → [[nombre, sku, clasica, premium], …]
+ * Lee UNA hoja de mínimos de Site Sheet → [[nombre, sku, clasica, premium], …]
  * Ubica las columnas por TEXTO de encabezado. Si falta alguna, aborta en vez
  * de adivinar la letra.
  */
-function leerMinimosSite_() {
-  var sh = SpreadsheetApp.openById(CFG.SITE_SHEET_ID).getSheetByName(CFG.SITE_HOJA_MINIMO);
-  if (!sh) throw new Error('Site Sheet no tiene la hoja "' + CFG.SITE_HOJA_MINIMO + '"');
+function leerHojaMinimos_(nombreHoja) {
+  var sh = SpreadsheetApp.openById(CFG.SITE_SHEET_ID).getSheetByName(nombreHoja);
+  if (!sh) throw new Error('Site Sheet no tiene la hoja "' + nombreHoja + '"');
 
   var ultFila = sh.getLastRow(), ultCol = sh.getLastColumn();
-  if (ultFila < 2) throw new Error('"' + CFG.SITE_HOJA_MINIMO + '" está vacía');
+  if (ultFila < 2) throw new Error('"' + nombreHoja + '" está vacía');
 
   var m = mapaColumnas_(sh.getRange(1, 1, 1, ultCol).getValues()[0]);
   var iNom = m['PRODUCTO'], iSku = m['SKU'],
@@ -64,7 +64,7 @@ function leerMinimosSite_() {
   if (iCla === undefined) faltan.push('"Walmart Clásica"');
   if (iPre === undefined) faltan.push('"Walmart Premium"');
   if (faltan.length) {
-    throw new Error('En "' + CFG.SITE_HOJA_MINIMO + '" faltan encabezados: ' + faltan.join(', '));
+    throw new Error('En "' + nombreHoja + '" faltan encabezados: ' + faltan.join(', '));
   }
 
   var datos = sh.getRange(2, 1, ultFila - 1, ultCol).getValues();
@@ -80,6 +80,31 @@ function leerMinimosSite_() {
       p > 0 ? p : ''
     ]);
   }
+  return out;
+}
+
+/**
+ * Mínimos de EM + CVA juntos, sin SKUs repetidos (si se repite, gana EM).
+ * Si la hoja de CVA falla, se sigue con EM y queda en el LOG.
+ */
+function leerMinimosSite_() {
+  var out = [], vistos = {};
+  CFG.SITE_HOJAS_MINIMO.forEach(function (nombre, i) {
+    var filas;
+    try {
+      filas = leerHojaMinimos_(nombre);
+    } catch (e) {
+      if (i === 0) throw e;                         // sin EM no hay nada que hacer
+      logWarn_('PRECIOS', 'No se pudo leer "' + nombre + '", se sigue sin ella',
+               { error: String(e && e.message || e) });
+      return;
+    }
+    filas.forEach(function (f) {
+      if (vistos[f[1]]) return;
+      vistos[f[1]] = true;
+      out.push(f);
+    });
+  });
 
   // Guardarraíl: una lectura truncada no sustituye a la buena.
   var ultimoN = Number(prop_('N_PRECIOS_SITE', '0'));
@@ -150,13 +175,27 @@ function tablaPrecios_() {
       if (c > 0 || p > 0) { t.minimos[s] = { c: c, p: p }; t.nMinimos++; }
     }
     if (ancho >= CFG.PE.COL_CUPON_PRECIO) {
+      // Killers. En Odoo la venta llega con el SKU GENERAL (sin -MSI, sin -2):
+      // Odoo no sabe por cuál publicación de Walmart se vendió. Por eso existe
+      // P "SIN -2": el SKU del killer (N, p.ej. X-MSI-3) ya pelado a X, que es
+      // lo que trae la venta. Se guardan las dos llaves (N y P) por si algún
+      // día la venta sí trae el sufijo.
+      var ks = sku_(f[CFG.PE.COL_KILLER_SKU - 1]);
+      var kp = num_(f[CFG.PE.COL_KILLER_PRECIO - 1]);
       var cs = sku_(f[CFG.PE.COL_CUPON_SKU - 1]);
-      var cp = f[CFG.PE.COL_CUPON_PRECIO - 1];
-      // Ignorar errores (#N/A, #VALUE!): solo números > 0
-      if (cs && typeof cp === 'number' && cp > 0) {
-        if (!t.cupones[cs]) t.cupones[cs] = [];
-        t.cupones[cs].push(cp);
-        t.nCupones++;
+      var cp = num_(f[CFG.PE.COL_CUPON_PRECIO - 1]);
+      var precioK = cp > 0 ? cp : kp;
+      var llavesK = {};
+      if (cs) llavesK[cs] = true;
+      if (ks) { llavesK[ks] = true; llavesK[skuBase_(ks)] = true; }
+      if (precioK > 0) {
+        var alguna = false;
+        Object.keys(llavesK).forEach(function (k) {
+          if (!t.cupones[k]) t.cupones[k] = [];
+          if (t.cupones[k].indexOf(precioK) < 0) t.cupones[k].push(precioK);
+          alguna = true;
+        });
+        if (alguna) t.nCupones++;
       }
     }
   }
@@ -207,7 +246,10 @@ function cuponesVigentes_(cuponesActuales) {
   return vig;
 }
 
-/** ¿El precio coincide con un cupón vigente del SKU? Prueba SKU, sin -2 y base. */
+/**
+ * ¿El precio coincide con un killer vigente? Prueba el SKU de la venta tal
+ * cual, sin -2..9 y pelado a SKU general (que es como lo guarda P).
+ */
 function esPrecioCupon_(cupones, sku, precio) {
   var llaves = [sku_(sku), skuSinVariante_(sku), skuBase_(sku)];
   for (var i = 0; i < llaves.length; i++) {
@@ -220,10 +262,15 @@ function esPrecioCupon_(cupones, sku, precio) {
   return false;
 }
 
-/** Mínimo que aplica: SKU exacto y, si no, SKU base. Premium → columna D. */
+/**
+ * Mínimo que aplica: SKU exacto y, si no, sin variante (-2..9). Un SKU -CVA
+ * nunca cae al mínimo de EM: si no está como -CVA, no tiene referencia.
+ * Premium → columna D.
+ */
 function minimoDe_(tabla, sku) {
   var s = sku_(sku);
-  var fila = tabla.minimos[s] || tabla.minimos[skuBase_(s)];
+  var fila = tabla.minimos[s] || tabla.minimos[skuSinVariante_(s)];
+  if (!fila && !esCVA_(s)) fila = tabla.minimos[skuBase_(s)];
   if (!fila) return 0;
   return tipoPublicacion_(s) === 'PREMIUM' ? (fila.p || 0) : (fila.c || 0);
 }
@@ -243,16 +290,13 @@ function evaluarVentaWalmart_(f, tabla, cupones, listaCaida) {
   if (!esVentaComercial_(f[3], J)) {
     return ['', base, tipo, origen, '—', '', '', 'INTERNA', 'Venta interna, insumo o prueba'];
   }
-  if (origen === 'CVA') {
-    return ['', base, tipo, 'CVA', '—', '', '', 'CVA', 'Producto CVA: no se compara contra mínimo EM'];
-  }
   if (skuIgnorado_(s)) {
-    return ['', base, tipo, 'EM', '—', '', '', 'IGNORADO', 'Prefijo viejo RES- / WL- / OB-'];
+    return ['', base, tipo, origen, '—', '', '', 'IGNORADO', 'Prefijo viejo RES- / WL- / OB-'];
   }
 
   var min = minimoDe_(tabla, s);
   if (!min) {
-    return ['', base, tipo, 'EM', '—', '', '', 'SIN REFERENCIA',
+    return ['', base, tipo, origen, '—', '', '', 'SIN REFERENCIA',
             'No está en PRECIOS ERIK' + (tipo === 'PREMIUM' ? ' (columna PREMIUM)' : '')];
   }
 
@@ -260,16 +304,16 @@ function evaluarVentaWalmart_(f, tabla, cupones, listaCaida) {
   var pct = dif / min;
 
   if (J >= min - CFG.TOLERANCIA_PRECIO) {
-    return [min, base, tipo, 'EM', 'MINIMO', dif, pct, 'OK', ''];
+    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'OK', ''];
   }
   if (esPrecioCupon_(cupones, s, J)) {
-    return [min, base, tipo, 'EM', 'CUPON', dif, pct, 'CUPON', 'Precio de cupón / killer Walmart'];
+    return [min, base, tipo, origen, 'CUPON', dif, pct, 'CUPON', 'Precio de killer Walmart'];
   }
   if (listaCaida) {
-    return [min, base, tipo, 'EM', 'MINIMO', dif, pct, 'PENDIENTE',
+    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'PENDIENTE',
             'Lista de cupones P/Q vacía: se revisa en la siguiente corrida'];
   }
-  return [min, base, tipo, 'EM', 'MINIMO', dif, pct, 'BAJO MINIMO', ''];
+  return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', ''];
 }
 
 // ── Menú y trigger ────────────────────────────────────────────────────────

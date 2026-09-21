@@ -20,10 +20,12 @@ var CFG = {
   // ── Libros ──────────────────────────────────────────────────────────────
   LIBRO_ID: '17S65PqXK1DfJeHloJ4IFt-3K-MnQKOQaN_BiE9RUYaw', // Venta Diaria Odoo 2026
 
-  // Site Sheet — de aquí salen los precios mínimos EM.
+  // Site Sheet — de aquí salen los precios mínimos (EM y CVA).
   // Leer otro Google Sheet va por la API de Sheets: NO gasta UrlFetch.
   SITE_SHEET_ID:    '1Yjwyyv7EF5CJ3tJ2DgGzXO7QHxyrC0aCCSj1MHL5AKY',
-  SITE_HOJA_MINIMO: 'Precios EM Minimo',
+  // Mínimos de los DOS masters: EM (propio) y CVA. Las ventas -CVA se
+  // comparan contra el mínimo CVA; las demás contra el de EM.
+  SITE_HOJAS_MINIMO: ['Precios EM Minimo', 'Precios CVA Minimo'],
   SITE_HOJA_LOG:    'Log',
 
   // Empresa de Odoo (la instancia es multiempresa)
@@ -50,7 +52,9 @@ var CFG = {
   PE: {
     FILA_DATOS: 3,
     COL_NOMBRE: 1, COL_SKU: 2, COL_CLASICA: 3, COL_PREMIUM: 4,
-    COL_CUPON_SKU: 16,     // P
+    COL_KILLER_SKU: 14,    // N  SKU de la publicación con killer (…-MSI, …-MSI-2)
+    COL_KILLER_PRECIO: 15, // O
+    COL_CUPON_SKU: 16,     // P  ese SKU pelado a SKU general = como llega la venta de Odoo
     COL_CUPON_PRECIO: 17   // Q
   },
 

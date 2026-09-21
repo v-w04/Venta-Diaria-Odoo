@@ -9,8 +9,9 @@
  * debajo del mínimo EM de PRECIOS ERIK, salvo que J coincida con un cupón
  * de Walmart (P/Q de PRECIOS ERIK, con memoria de 15 días).
  *
- * Nunca alertan: SKUs -CVA · prefijos RES-/WL-/OB- · ventas internas,
- * insumos y pruebas · SKUs sin precio en PRECIOS ERIK.
+ * EM y CVA se revisan igual, cada uno contra el mínimo de su master.
+ * Nunca alertan: prefijos RES-/WL-/OB- · ventas internas, insumos y
+ * pruebas · SKUs sin precio en PRECIOS ERIK.
  */
 
 /** Carga lo necesario para evaluar. Si PRECIOS ERIK está vacía, la llena primero. */
@@ -210,7 +211,7 @@ function resumenWalmart() {
   var n = sh.getLastRow();
   var ancho = Math.max(Math.min(sh.getMaxColumns(), N_COLS_WALMART), 12);
   var datos = sh.getRange(2, 1, n - 1, ancho).getValues();
-  var c = { OK: 0, 'BAJO MINIMO': 0, CUPON: 0, PENDIENTE: 0, 'SIN REFERENCIA': 0, CVA: 0, otros: 0, sin: 0 };
+  var c = { OK: 0, 'BAJO MINIMO': 0, CUPON: 0, PENDIENTE: 0, 'SIN REFERENCIA': 0, otros: 0, sin: 0 };
   var importe = 0, perdida = 0;
   datos.forEach(function (f) {
     importe += num_(f[10]);
@@ -231,7 +232,6 @@ function resumenWalmart() {
     '  Bajo mínimo: ' + c['BAJO MINIMO'] + '\n' +
     '  Pendientes: ' + c.PENDIENTE + '\n' +
     '  Sin precio en PRECIOS ERIK: ' + c['SIN REFERENCIA'] + '\n' +
-    '  CVA: ' + c.CVA + '\n' +
     '  Anteriores al cambio (sin análisis): ' + c.sin + '\n\n' +
     'Importe total: $' + Math.round(importe).toLocaleString('es-MX') + '\n' +
     'Diferencia acumulada bajo mínimo: $' + Math.round(perdida).toLocaleString('es-MX') + '\n\n' +
