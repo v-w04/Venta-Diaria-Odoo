@@ -86,10 +86,10 @@ var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'PROMO CATEGORIA (pun
 // de esa categoría con stock (del dashboard WM_Inv) entran a KILLERS ACTIVOS.
 // Vacío = sin promoción. MARCAS: prefijos de SKU que también cuentan como de
 // esa categoría aunque Walmart los tenga en otro departamento (DJI, CAN…).
-// YA APLICADA EN EL SITE: SI (o vacío) = la promoción ya la cargaste en el site,
-// así que el mínimo de PRECIOS ERIK YA viene rebajado → aquí NO se vuelve a
-// rebajar (Carga = mínimo, y las ventas se revisan contra ese mínimo).
-// NO = el site no la trae → aquí se recalcula la Carga y se ajusta el mínimo.
+// YA APLICADA EN EL SITE: vacío/NO = el MÍNIMO del site viene sin la rebaja
+// (así está hoy: tu hoja Activos le quitaba el −7% al mínimo) → aquí se calcula
+// la Carga igual que tu hoja: INT((mín − mín×7%)/10)*10+9.
+// SI = el mínimo del site ya viene rebajado → Carga = mínimo tal cual.
 
 // Lo que MSI le suma a la comisión normal. Se deduce de los killers pegados
 // (Comisión MSI − Comisión sobre el cupón); este es el respaldo.
@@ -276,7 +276,7 @@ function promosCategoria_() {
     if (!cat) return;
     var red = descKam_(r[3]);
     out.cats[cat] = { nombre: String(r[0]), normal: com[cat], red: red, origen: red ? 'COMISIONES' : '',
-                      enSite: norm_(r[5]) !== 'NO' };
+                      enSite: norm_(r[5]) === 'SI' };
     out.nombres[cat] = cat;
     String(r[2] || '').split(',').forEach(function (x) {
       var k = norm_(x);
@@ -334,11 +334,10 @@ function skusPromoCategoria_(pc) {
   leerDashboard_().forEach(function (d) {
     var s = d.sku;
     if (skuIgnorado_(s) || /-(OB|OPENBOX)$/.test(s)) return;
-    if (tipoPublicacion_(s) === 'PREMIUM') return;   // MSI: la promo ya la aplica el KAM
     var cat = categoriaDeSku_(pc, s, d.shelf);
     if (!cat || !(pc.cats[cat].red > 0)) return;
     if (!(d.tot >= 4 || d.wfs > 0)) return;
-    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: d.tot });
+    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: d.tot, depto: d.shelf });
   });
   return out;
 }
@@ -809,13 +808,13 @@ function reconstruirActivos_() {
     ]);
   };
 
-  // Promoción de CATEGORÍA: los SKUs NO MSI de la categoría, con stock y sin
-  // killer vigente (a los MSI el KAM ya se las aplica en el seller center).
+  // Promoción de CATEGORÍA: los SKUs de la categoría (clásica y MSI) con stock
+  // y SIN killer vigente. Los que tienen killer ya traen su precio del KAM.
   // El site NO trae la promoción, así que el precio de carga se rehace aquí
   // con la comisión rebajada, sobre el mínimo del site:
   //   · YA APLICADA EN EL SITE = SI → Carga = el mínimo del site tal cual.
-  //   · NO → Carga = mínimo × (1 − comisión normal) ÷ (1 − comisión con promo),
-  //     redondeado a terminar en 9.
+  //   · vacío/NO → Carga = INT((mín − mín × puntos%)/10)*10+9, la fórmula de tu
+  //     hoja Activos (8,049 con 7 → 7,489). Clásica y MSI sin killer vigente.
   var filaPromoCat = function (p) {
     var r = filas.length + 2;
     var info = pc.cats[p.cat];
@@ -829,9 +828,9 @@ function reconstruirActivos_() {
       p.sku, p.nombre,
       '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
         hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
-      (info.enSite || normal === '' || fin === '') ? '=C' + r :   // ya rebajado en el site
-        '=IF(ISNUMBER(C' + r + '),INT(C' + r + '*' + (1 - normal).toFixed(4) + '/' +
-        (1 - fin).toFixed(4) + '/10)*10+9,"")',                         // D precio con promo
+      info.enSite ? '=C' + r :                                          // ya rebajado en el site
+        '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + info.red.toFixed(4) +
+        ')/10)*10+9,"")',                                               // D = mín − 7%, como tu hoja
       '',                                                               // E
       '=IF(D' + r + '="","",D' + r + '+N(E' + r + '))',                 // F PAGAN
       '=IF(AND(ISNUMBER(C' + r + '),ISNUMBER(F' + r + ')),F' + r + '/C' + r + ',"")', // G %
@@ -839,7 +838,7 @@ function reconstruirActivos_() {
       '', '', '',                                                       // I J K
       fin, '', fin === '' ? '' : Math.round((fin + extra) * 1000) / 1000, // L M N
       '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
-      'SI', info.nombre,                                                // S T
+      'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen, info.enSite ? 'Ya aplicada en el site' : 'Recalculada aquí' // Y–AB
     ]);
@@ -1050,7 +1049,7 @@ function catPromoDeSku_(killers, sku, grupo) {
 /** ¿La promoción de la categoría de este SKU ya viene aplicada en el site? */
 function promoYaEnSite_(killers, sku, grupo) {
   var ck = catPromoDeSku_(killers, sku, grupo);
-  return !!(ck && killers.promoCat[ck] && killers.promoCat[ck].enSite !== false);
+  return !!(ck && killers.promoCat[ck] && killers.promoCat[ck].enSite === true);
 }
 
 /**
@@ -1064,7 +1063,7 @@ function promoCategoriaDe_(killers, sku, grupo, premium) {
     var ck = killers.catSku[ll[i]];
     var p = ck && killers.promoCat[ck];
     if (!p) continue;
-    if (p.enSite !== false) return null;
+    if (p.enSite === true) return null;
     var extra = killers.extra || MSI_EXTRA_DEF;
     return premium ? { normal: p.normal + extra, com: p.normal + extra - p.red, nombre: p.nombre }
                    : { normal: p.normal, com: p.normal - p.red, nombre: p.nombre };
