@@ -611,7 +611,13 @@ function reconstruirActivos_() {
   var hojaPrecios = "'" + CFG.H.PRECIOS + "'!";
   var res = { total: 0, promos: 0, porIniciar: 0, sinCategoria: 0, entraron: 0 };
   var filas = [], promos = [];
-  Object.keys(porSku).sort().forEach(function (sku) {
+  // Orden: primero los VIGENTES (lo que subes hoy), al final los POR INICIAR.
+  var orden = Object.keys(porSku).map(function (sku) {
+    var x = rangoQueAplica_(porSku[sku], ahora);
+    return { sku: sku, v: x && x.estado === 'VIGENTE' ? 0 : 1 };
+  }).sort(function (a, b) { return (a.v - b.v) || (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0); })
+    .map(function (x) { return x.sku; });
+  orden.forEach(function (sku) {
     var rangos = porSku[sku];
     var sel = rangoQueAplica_(rangos, ahora);
     if (!sel) return;
@@ -695,7 +701,7 @@ function escribirPromociones_(promos) {
     o.pubs.push(x.k.sku);
     if (x.pr.red > o.x.pr.red) o.x = x;
   });
-  var filas = Object.keys(porBase).sort().map(function (b) {
+  var todas = Object.keys(porBase).sort().map(function (b) {
     var x = porBase[b].x, k = x.k, pr = x.pr;
     var cat = categoriaOficial_(x.cat);
     return [b, cat, Math.round(pr.red * 1000) / 10, pr.normal, Math.round((pr.normal - pr.redCla) * 1000) / 1000,
@@ -704,9 +710,21 @@ function escribirPromociones_(promos) {
             porBase[b].pubs.join(', '), x.cat ? (pr.inferida ? 'INFERIDA' : 'CAPTURADA') : 'INFERIDA',
             k.origen];
   });
+  // Arriba: las que SÍ van al site (A2:C hasta donde acaben).
+  // Abajo, separadas: SOLO MSI, que NO se cargan en el site porque el site
+  // rebaja el SKU base completo (clásica y MSI). Esas las cuida este libro.
+  var base = todas.filter(function (f) { return f[7] === 'COMISION BASE'; });
+  var msi  = todas.filter(function (f) { return f[7] === 'SOLO MSI'; });
+  var vacia = function (txt) { var r = new Array(ENC_K_PROMO.length).fill(''); r[0] = txt; return r; };
+  var filas = base.slice();
+  if (msi.length) {
+    filas.push(vacia(''));
+    filas.push(vacia('▼ SOLO MSI — NO CARGAR EN EL SITE (bajaría también la clásica). Este libro ya las toma en cuenta.'));
+    filas = filas.concat(msi);
+  }
   var sh = hoja_(K_PROMO, ENC_K_PROMO);
   sh.getRange(1, 1, 1, ENC_K_PROMO.length).setValues([ENC_K_PROMO]);
-  var n0 = ultimaFilaColA_(sh);
+  var n0 = Math.max(ultimaFilaColA_(sh), sh.getLastRow());
   if (n0 > 1) sh.getRange(2, 1, n0 - 1, Math.max(sh.getLastColumn(), ENC_K_PROMO.length)).clearContent();
   if (filas.length) {
     if (sh.getMaxRows() < filas.length + 1) sh.insertRowsAfter(sh.getMaxRows(), filas.length + 1 - sh.getMaxRows());
@@ -714,7 +732,7 @@ function escribirPromociones_(promos) {
     sh.getRange(2, 4, filas.length, 4).setNumberFormat('0.0%');
     sh.getRange(2, 9, filas.length, 2).setNumberFormat('dd/MM/yyyy HH:mm');
   }
-  return filas.length;
+  return todas.length;
 }
 
 /** Llave con la que C busca el mínimo en PRECIOS ERIK (misma regla que minimoDe_). */
@@ -883,7 +901,8 @@ function promoQueAplica_(killers, sku, fecha, grupo, premium) {
       var c = premium ? e.comMsi : e.com, n = premium ? e.normalMsi : e.normal;
       if (c === '' || c === undefined || n === '' || n === undefined || !(c < n - 0.0001)) return;
       if (!enVentana_(e, fecha)) return;
-      if (!mejor || e.nCarga > mejor.nCarga) mejor = { com: c, normal: n, nCarga: e.nCarga };
+      var soloMsi = !(e.com !== '' && e.normal !== '' && e.com < e.normal - 0.0001);
+      if (!mejor || e.nCarga > mejor.nCarga) mejor = { com: c, normal: n, nCarga: e.nCarga, soloMsi: soloMsi };
     });
   }
   return mejor;
