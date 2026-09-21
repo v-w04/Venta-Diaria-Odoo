@@ -1,24 +1,16 @@
 /**
  * VENTA DIARIA ODOO 2026 — Importación de ventas desde Odoo
  *
- * Una corrida baja las líneas de venta nuevas y las reparte:
+ * Solo se trae de Odoo lo que se usa, y cada cosa va a su hoja:
  *
- *   Órdenes de venta (acumulado)  ← TODAS las plataformas, sin análisis
- *   WALMART                       ← canal Walmart + análisis de precio
- *   PEDIDOS CVA                   ← SKUs -CVA de cualquier plataforma (+ correo)
+ *   WALMART      ← ventas del cliente WALMART, con su análisis de precio
+ *   PEDIDOS CVA  ← ventas de SKUs -CVA de CUALQUIER plataforma
  *
- * Cada hoja se deduplica contra sí misma por ID Línea, así que no se repite
- * nada de lo que el código anterior ya había repartido.
+ * Odoo hace el filtro (cliente WALMART o SKU -CVA): no se baja nada más.
+ * Una venta -CVA hecha en Walmart va a las dos hojas.
+ * Cada hoja se deduplica contra sí misma por ID Línea.
  *
- * Costo: 3 a 5 llamadas a Odoo por corrida → ~600/día cada 10 min, 3% de la
- * cuota de 20,000 de la cuenta.
- *
- * Qué cambió contra el código anterior:
- *   · Ya no se reparte a una hoja por cliente (eso llenó el libro).
- *   · Ya no hay cierre nocturno que vaciaba la hoja principal: ahora acumula,
- *     con recorte automático a 365 días.
- *   · Filtra por empresa ElectronicsMexico igual que antes.
- *   · La fecha se interpreta como UTC (antes podía quedar corrida 6 h).
+ * Ya no existe "Órdenes de venta (acumulado)": se migra y se borra una vez.
  */
 
 function importarVentasAuto() {
@@ -26,13 +18,10 @@ function importarVentasAuto() {
   if (!lock) { logWarn_('AUTO', 'Otra corrida en curso, se omite'); return; }
   try {
     var r = importarVentas_();
-    if (r.nuevas > 0 || r.pendientes > 0) logOK_('AUTO', 'Importación terminada', r);
+    // Siempre deja rastro: así se ve en el LOG que el trigger sí corre.
+    logOK_('AUTO', (r.walmart || r.cva || r.pendientes) ? 'Importación terminada' : 'Sin ventas nuevas', r);
   } catch (e) {
     logError_('AUTO', e);
-    if (esErrorDeCeldas_(String(e && e.message || e))) {
-      logWarn_('AUTO', 'El libro está en el tope de celdas. ' +
-               'Menú ⚙️ Venta Diaria → 🧹 Limpiar hojas que no uso.');
-    }
   } finally {
     lock.releaseLock();
   }
@@ -46,10 +35,9 @@ function importarVentasAhora() {
     var r = importarVentas_();
     avisar_(
       'Importación terminada\n\n' +
-      'Líneas revisadas en Odoo: ' + r.revisadas + '\n' +
-      'Nuevas en Órdenes de venta: ' + r.nuevas + '\n' +
-      '  · Walmart: ' + r.walmart + '\n' +
-      '  · CVA: ' + r.cva + '\n' +
+      'Líneas nuevas revisadas: ' + r.revisadas + '\n' +
+      '  · WALMART: ' + r.walmart + '\n' +
+      '  · PEDIDOS CVA: ' + r.cva + '\n' +
       'Alertas de precio: ' + r.alertas + '\n' +
       'Llamadas a Odoo: ' + r.llamadas
     );
@@ -62,28 +50,30 @@ function importarVentasAhora() {
 }
 
 function importarVentas_() {
+  migrarOrdenesUnaVez_();
+
   var t0 = Date.now();
   var llamadas0 = llamadasDeHoy_();
-  var res = { revisadas: 0, nuevas: 0, walmart: 0, cva: 0, alertas: 0,
+  var res = { revisadas: 0, walmart: 0, cva: 0, alertas: 0,
               pendientes: 0, llamadas: 0, seg: 0 };
 
   // ── 1. Bajar las líneas ───────────────────────────────────────────────
   //  NORMAL   id > última importada: casi siempre una llamada.
-  //  BARRIDO  toda la ventana de 7 días, cada hora, para recoger órdenes
-  //           confirmadas tarde (id menor que la marca de agua).
+  //  BARRIDO  cada hora, 2 días completos: órdenes confirmadas tarde.
   var ultimoId = Number(prop_('ULTIMO_ID_LINEA', '0'));
   var tocaBarrido = (Date.now() - Number(prop_('ULTIMO_BARRIDO', '0'))) > 3600000;
-
-  // El barrido mira una ventana corta (2 días) para que quepa completa en una
-  // corrida; la corrida normal avanza por id y no necesita ventana grande.
   var dias = (tocaBarrido || !ultimoId) ? CFG.DIAS_BARRIDO : CFG.DIAS_VENTANA;
-  var desde = new Date(Date.now() - dias * 86400000);
-  var desdeStr = Utilities.formatDate(desde, 'UTC', 'yyyy-MM-dd HH:mm:ss');
+  var desdeStr = Utilities.formatDate(new Date(Date.now() - dias * 86400000),
+                                      'UTC', 'yyyy-MM-dd HH:mm:ss');
 
   var dominio = [['create_date', '>=', desdeStr], ['state', 'in', CFG.ESTADOS_SO]];
   var company = odooCompanyId_();
   if (company) dominio.push(['company_id', '=', company]);
   if (!tocaBarrido && ultimoId) dominio.push(['id', '>', ultimoId]);
+  // Solo lo que se usa: cliente WALMART, o producto -CVA de cualquier plataforma.
+  dominio.push('|',
+    ['order_partner_id.name', '=', CFG.CANAL_WALMART],
+    ['product_id.default_code', 'ilike', CFG.SUFIJO_CVA]);
 
   var campos = odooCamposExistentes_('sale.order.line', [
     'id', 'order_id', 'product_id', 'product_uom_qty', 'price_unit', 'price_subtotal'
@@ -101,16 +91,15 @@ function importarVentas_() {
     if (Date.now() - t0 > 240000) break;
   }
   if (tocaBarrido) setProp_('ULTIMO_BARRIDO', String(Date.now()));
-  res.revisadas = lineas.length;
 
   var maxId = ultimoId;
   lineas.forEach(function (l) { if (Number(l.id) > maxId) maxId = Number(l.id); });
 
-  // Solo se procesa lo que aún no está en Órdenes de venta. Lo que ya está ahí
-  // ya se repartió a WALMART y PEDIDOS CVA (por este código o por el anterior).
-  // Así el barrido de cada hora no vuelve a pedir órdenes ni productos a Odoo.
-  var yaEstan = idsDeHoja_(hoja_(CFG.H.VENTAS, ENC_VENTAS));
-  lineas = lineas.filter(function (l) { return !yaEstan[String(l.id)]; });
+  // Solo lo que todavía no está en WALMART ni en PEDIDOS CVA.
+  var yaWm = idsDeHoja_(hoja_(CFG.H.WALMART, ENC_WALMART));
+  var yaCva = idsDeHoja_(hoja_(CFG.H.CVA, ENC_VENTAS));
+  lineas = lineas.filter(function (l) { return !yaWm[String(l.id)] && !yaCva[String(l.id)]; });
+  res.revisadas = lineas.length;
 
   if (lineas.length) {
     // ── 2. Órdenes (1 llamada) ──────────────────────────────────────────
@@ -136,7 +125,7 @@ function importarVentas_() {
         .forEach(function (p) { prods[p.id] = p; });
     }
 
-    // ── 4. Filas A–L (mismo orden que el código anterior) ──────────────
+    // ── 4. Filas A–L ────────────────────────────────────────────────────
     var m2o = function (v) { return (v && v.length > 1) ? String(v[1]) : ''; };
     var filas = [];
     lineas.forEach(function (l) {
@@ -159,10 +148,7 @@ function importarVentas_() {
       ]);
     });
 
-    // ── 5. Repartir ─────────────────────────────────────────────────────
-    var nuevas = agregarSinDuplicar_(CFG.H.VENTAS, ENC_VENTAS, filas);   // segunda red
-    res.nuevas = nuevas.length;
-
+    // ── 5. Cada venta a su hoja ─────────────────────────────────────────
     var wm = filas.filter(function (f) { return esWalmart_(f[3]); });
     if (wm.length) {
       var rw = procesarWalmart_(wm);
@@ -177,17 +163,20 @@ function importarVentas_() {
     }
   }
 
+  // La hoja SKU ASIGNADOS tiene que existir para que la llenes.
+  if (!libro_().getSheetByName(CFG.H.ASIGNADOS)) hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
+
   // ── 6. Ventas Walmart que quedaron PENDIENTES en corridas anteriores ──
   var rp = revisarPendientesWalmart_();
   res.pendientes = rp.revisadas;
   res.alertas += rp.alertas;
 
-  // ── 7. Correo CVA con lo que no se haya avisado (agrupado) ────────────
-  enviarCorreoCVA_(false);
+  // ── 7. Reporte diario de ventas CVA (una vez al día, desde las 8 am) ──
+  enviarCorreoCVA_();
 
   // ── 8. Marca de agua y retención ──────────────────────────────────────
   if (maxId > ultimoId) setProp_('ULTIMO_ID_LINEA', String(maxId));
-  recortarPorFecha_(CFG.H.VENTAS, 2, CFG.RETENCION.VENTAS);
+  recortarPorFecha_(CFG.H.WALMART, 2, CFG.RETENCION.WALMART);
 
   res.llamadas = llamadasDeHoy_() - llamadas0;
   res.seg = (Date.now() - t0) / 1000;
@@ -196,13 +185,13 @@ function importarVentas_() {
 
 /**
  * Borra las filas más viejas que N días mirando la columna de fecha
- * (índice 0-based). clearContent antes de deleteRows. La fila 1 nunca se toca.
+ * (índice 0-based). La fila 1 nunca se toca.
  */
 function recortarPorFecha_(nombreHoja, colFecha, dias) {
   if (!dias) return 0;
   var sh = libro_().getSheetByName(nombreHoja);
   if (!sh) return 0;
-  var n = sh.getLastRow();
+  var n = ultimaFilaColA_(sh);
   if (n < 3) return 0;
 
   var corte = Date.now() - dias * 86400000;
@@ -215,9 +204,46 @@ function recortarPorFecha_(nombreHoja, colFecha, dias) {
     if (t < corte) borrar++; else break;
   }
   if (borrar > 0) {
-    sh.getRange(2, 1, borrar, sh.getMaxColumns()).clearContent();
     sh.deleteRows(2, borrar);
     logInfo_('RETENCION', 'Filas viejas recortadas de ' + nombreHoja, { filas: borrar, dias: dias });
   }
   return borrar;
+}
+
+/**
+ * UNA sola vez: vacía y elimina "Órdenes de venta (acumulado)".
+ * Antes de borrarla pasa lo que sirve:
+ *   · cliente WALMART que no esté en WALMART  → WALMART (sin análisis: son
+ *     ventas viejas; compararlas contra el precio de hoy daría alertas falsas)
+ *   · SKU -CVA que no esté en PEDIDOS CVA     → PEDIDOS CVA (no entran al
+ *     reporte diario: son histórico)
+ */
+function migrarOrdenesUnaVez_() {
+  if (prop_('ORDENES_MIGRADAS') === '1') return;
+  var ss = libro_();
+  var sh = ss.getSheetByName(CFG.HOJA_ORDENES_VIEJA);
+  if (!sh) { setProp_('ORDENES_MIGRADAS', '1'); return; }
+
+  var n = ultimaFilaColA_(sh);
+  var wm = [], cva = [], total = 0;
+  if (n >= 2) {
+    sh.getRange(2, 1, n - 1, 12).getValues().forEach(function (f) {
+      if (f[0] === '' || f[0] === null || isNaN(Number(f[0]))) return;
+      total++;
+      if (esWalmart_(f[3])) wm.push(f);
+      if (esCVA_(f[6])) cva.push(f);
+    });
+  }
+
+  var aWm = agregarSinDuplicar_(CFG.H.WALMART, ENC_WALMART, wm).length;
+
+  marcaCvaInicial_();
+  var aCva = agregarSinDuplicar_(CFG.H.CVA, ENC_VENTAS, cva).length;
+  if (aCva) setProp_('CVA_FILA_AVISADA', String(ultimaFilaColA_(ss.getSheetByName(CFG.H.CVA))));
+
+  ss.deleteSheet(sh);
+  setProp_('ORDENES_MIGRADAS', '1');
+  logOK_('MIGRAR', 'Se eliminó "' + CFG.HOJA_ORDENES_VIEJA + '"', {
+    filasRevisadas: total, walmartPasadas: aWm, cvaPasadas: aCva
+  });
 }

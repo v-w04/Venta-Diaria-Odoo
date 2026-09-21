@@ -34,13 +34,22 @@ var CFG = {
   // ── Las hojas que este proyecto usa (mismos nombres que antes) ──────────
   H: {
     WALMART:  'WALMART',                        // ventas Walmart + análisis de precio
-    VENTAS:   'Órdenes de venta (acumulado)',   // TODAS las plataformas, sin análisis
-    PRECIOS:  'PRECIOS ERIK',                   // tabla de precios mínimos + cupones
+    PRECIOS:  'PRECIOS ERIK',                   // precios mínimos EM + CVA (A–D)
     ALERTAS:  'Histórico de alertas',           // ventas Walmart bajo mínimo
     CVA:      'PEDIDOS CVA',                    // SKUs -CVA de cualquier plataforma
-    CUPONES:  'CUPONES WALMART HIST',           // memoria de cupones (oculta)
-    LOG:      'LOG Ventas'                      // bitácora del script
+    K_PEGAR:  'KILLERS PEGAR',                  // pegado de Table Capture
+    K_KAM:    'KILLERS KAM',                    // killers autorizados por KAM
+    K_ACT:    'KILLERS ACTIVOS',                // killers vigentes (lo genera el script)
+    K_HIST:   'KILLERS HISTORICO',              // todos los killers, por mes
+    K_COM:    'COMISIONES',                     // comisión normal por categoría
+    LOG:      'LOG Ventas',                     // bitácora del script
+    ASIGNADOS:'SKU ASIGNADOS'                   // SKUs vinculados a otro SKU
   },
+
+  // Hoja vieja que se elimina: lo que traiga de WALMART y -CVA se pasa a sus
+  // hojas y luego se borra (una sola vez, ver migrarOrdenesUnaVez_).
+  HOJA_ORDENES_VIEJA: 'Órdenes de venta (acumulado)',
+  HOJA_CUPONES_VIEJA: 'CUPONES WALMART HIST',   // se pasa a KILLERS HISTORICO y se borra
 
   // ── PRECIOS ERIK — columnas que respeta el script ───────────────────────
   //   Filas 1-2 encabezado, datos desde la fila 3.
@@ -59,7 +68,7 @@ var CFG = {
   },
 
   // ── Reglas de negocio ───────────────────────────────────────────────────
-  CANAL_WALMART: 'WALMART',   // se detecta con "contiene" sobre Cliente, como antes
+  CANAL_WALMART: 'WALMART',   // cliente exacto en Odoo
   SUFIJO_CVA:    '-CVA',
 
   // Prefijos que NO se toman en cuenta nunca (publicaciones viejas)
@@ -71,13 +80,13 @@ var CFG = {
 
   // Alerta cuando J (precio unitario) < mínimo − tolerancia. Igual que antes.
   TOLERANCIA_PRECIO: 0.01,
-  // Un cupón visto en P/Q se sigue aceptando estos días (cupones que rotan
-  // o IMPORTRANGE sirviendo caché viejo). Igual que antes.
-  CUPON_DIAS_VIGENCIA: 15,
 
   // ── Correo ──────────────────────────────────────────────────────────────
   // ÚNICO destinatario del proyecto. Solo avisa ventas CVA. No agregar más.
   CORREO_CVA: 'victor.walmart.04@gmail.com',
+  // Un solo correo al día, a partir de esta hora, con todo lo vendido desde
+  // el correo anterior (o sea, el día completo de ayer).
+  CVA_HORA_REPORTE: 8,
 
   // ── Importación desde Odoo ──────────────────────────────────────────────
   DIAS_VENTANA: 7,          // corrida normal: líneas nuevas (id > última) de 7 días
@@ -87,7 +96,7 @@ var CFG = {
 
   // ── Retención (lo que evita volver al tope de 10M celdas) ───────────────
   RETENCION: {
-    VENTAS: 365,   // días en Órdenes de venta (acumulado)
+    WALMART: 400,  // días en WALMART (ventas más viejas se recortan)
     LOG:    2000   // filas en LOG Ventas
   },
 
@@ -97,7 +106,7 @@ var CFG = {
   TZ: 'America/Mexico_City'
 };
 
-/** Ventas: A–L, igual que el código anterior. */
+/** Ventas A–L (WALMART y PEDIDOS CVA), mismo orden que el código anterior. */
 var ENC_VENTAS = [
   'ID Línea', 'Número (SO)', 'Fecha creación', 'Cliente', 'Vendedor',
   'Estado SO', 'SKU', 'Producto', 'Cantidad', 'Precio unitario',
@@ -127,7 +136,11 @@ var N_COLS_WALMART = 21;
 
 var ENC_LOG = ['Hora', 'Emoji', 'Nivel', 'Etapa', 'Mensaje', 'Detalles (JSON)'];
 
-var ENC_CUPONES = ['SKU', 'Precio', 'Primera vez visto', 'Última vez visto'];
+/** SKU ASIGNADOS: A = SKU principal (el publicado, con su precio y killer);
+ *  B en adelante = los SKUs de Odoo vinculados a él. Puedes agregar columnas. */
+var ENC_ASIGNADOS = ['SKU PRINCIPAL', 'ASIGNADO 1', 'ASIGNADO 2', 'ASIGNADO 3',
+                     'ASIGNADO 4', 'ASIGNADO 5'];
+
 
 /** Lee una propiedad del script. */
 function prop_(k, def) {

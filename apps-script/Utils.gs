@@ -87,9 +87,9 @@ function esCVA_(s) {
   return sku_(s).indexOf(CFG.SUFIJO_CVA) >= 0;
 }
 
-/** Walmart se detecta con "contiene", igual que el código anterior. */
+/** Solo el cliente que se llama exactamente WALMART. */
 function esWalmart_(cliente) {
-  return norm_(cliente).indexOf(norm_(CFG.CANAL_WALMART)) >= 0;
+  return norm_(cliente) === norm_(CFG.CANAL_WALMART);
 }
 
 function skuIgnorado_(s) {
@@ -174,10 +174,25 @@ function agregarSinDuplicar_(nombreHoja, encabezados, filas) {
   return nuevas;
 }
 
-/** Agrega filas al final en una sola escritura. */
+/**
+ * Última fila con dato en la columna A. getLastRow() cuenta también lo que
+ * derrama una fórmula en otra columna (el ARRAYFORMULA de N en Órdenes de
+ * venta), y con eso las filas nuevas caían miles de renglones abajo.
+ */
+function ultimaFilaColA_(sh) {
+  var n = sh.getLastRow();
+  if (n < 1) return 0;
+  var vals = sh.getRange(1, 1, n, 1).getValues();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (vals[i][0] !== '' && vals[i][0] !== null) return i + 1;
+  }
+  return 0;
+}
+
+/** Agrega filas al final (después del último dato de la columna A). */
 function agregarFilas_(sh, filas) {
   if (!filas || !filas.length) return;
-  var inicio = Math.max(sh.getLastRow() + 1, 2);
+  var inicio = Math.max(ultimaFilaColA_(sh) + 1, 2);
   var necesarias = inicio + filas.length - 1;
   if (sh.getMaxRows() < necesarias) {
     sh.insertRowsAfter(sh.getMaxRows(), necesarias - sh.getMaxRows() + 100);

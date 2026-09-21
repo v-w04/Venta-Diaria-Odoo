@@ -4,7 +4,7 @@
  *
  * Solo lo que se usa. Lo demás corre solo con los triggers:
  *   · ventas pendientes de Walmart → se revisan en cada importación
- *   · correo de ventas CVA          → sale solo, agrupado cada 20 min
+ *   · correo de ventas CVA          → sale solo, una vez al día (8 am)
  *   · hojas del sistema             → se crean solas si faltan
  */
 
@@ -13,6 +13,8 @@ function onOpen() {
   ui.createMenu('⚙️ Venta Diaria')
       .addItem('🔄 Importar ventas de Odoo ahora', 'importarVentasAhora')
       .addItem('💲 Actualizar PRECIOS ERIK desde Site Sheet', 'actualizarPreciosMinimos')
+      .addItem('🎯 Procesar killers pegados', 'procesarKillers')
+      .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')
       .addSeparator()
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')
       .addItem('🩺 Diagnóstico', 'diagnostico')

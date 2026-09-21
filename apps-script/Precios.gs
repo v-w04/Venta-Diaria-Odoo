@@ -119,7 +119,6 @@ function leerMinimosSite_() {
 /**
  * Escribe A–D de PRECIOS ERIK con los mínimos de Site Sheet.
  * Solo reescribe si algo cambió (huella del contenido).
- * Borra primero A:D completo: eso quita la fórmula vieja que traía los #N/A.
  * N–Q no se tocan.
  */
 function actualizarPreciosErik_(forzar) {
@@ -154,12 +153,16 @@ function actualizarPreciosErik_(forzar) {
 // ── Lectura para evaluar ventas ───────────────────────────────────────────
 
 /**
- * Lee PRECIOS ERIK (A–D y P–Q) en una sola pasada.
- * Devuelve { minimos: {SKU: {c, p}}, cupones: {SKU: [precios]}, nCupones }
+ * Lee PRECIOS ERIK en una sola pasada.
+ *   minimos  {SKU: {c, p}}      de A–D
+ *   killersNQ [{general, pub, precio}] de N–Q: solo respaldo mientras
+ *            KILLERS HISTORICO está vacío
+ *            general = P (el SKU como llega la venta de Odoo)
+ *            pub     = N (el SKU de la publicación con killer, …-MSI-3)
  */
 function tablaPrecios_() {
   var sh = libro_().getSheetByName(CFG.H.PRECIOS);
-  var t = { minimos: {}, cupones: {}, nCupones: 0, nMinimos: 0 };
+  var t = { minimos: {}, killersNQ: [], nMinimos: 0, nCupones: 0 };
   if (!sh) return t;
   var n = sh.getLastRow();
   if (n < CFG.PE.FILA_DATOS) return t;
@@ -175,92 +178,18 @@ function tablaPrecios_() {
       if (c > 0 || p > 0) { t.minimos[s] = { c: c, p: p }; t.nMinimos++; }
     }
     if (ancho >= CFG.PE.COL_CUPON_PRECIO) {
-      // Killers. En Odoo la venta llega con el SKU GENERAL (sin -MSI, sin -2):
-      // Odoo no sabe por cuál publicación de Walmart se vendió. Por eso existe
-      // P "SIN -2": el SKU del killer (N, p.ej. X-MSI-3) ya pelado a X, que es
-      // lo que trae la venta. Se guardan las dos llaves (N y P) por si algún
-      // día la venta sí trae el sufijo.
-      var ks = sku_(f[CFG.PE.COL_KILLER_SKU - 1]);
-      var kp = num_(f[CFG.PE.COL_KILLER_PRECIO - 1]);
-      var cs = sku_(f[CFG.PE.COL_CUPON_SKU - 1]);
-      var cp = num_(f[CFG.PE.COL_CUPON_PRECIO - 1]);
-      var precioK = cp > 0 ? cp : kp;
-      var llavesK = {};
-      if (cs) llavesK[cs] = true;
-      if (ks) { llavesK[ks] = true; llavesK[skuBase_(ks)] = true; }
-      if (precioK > 0) {
-        var alguna = false;
-        Object.keys(llavesK).forEach(function (k) {
-          if (!t.cupones[k]) t.cupones[k] = [];
-          if (t.cupones[k].indexOf(precioK) < 0) t.cupones[k].push(precioK);
-          alguna = true;
-        });
-        if (alguna) t.nCupones++;
-      }
+      var pub = sku_(f[CFG.PE.COL_KILLER_SKU - 1]);
+      var gen = sku_(f[CFG.PE.COL_CUPON_SKU - 1]) || (pub ? skuBase_(pub) : '');
+      var precio = num_(f[CFG.PE.COL_CUPON_PRECIO - 1]) || num_(f[CFG.PE.COL_KILLER_PRECIO - 1]);
+      if (gen && precio > 0) t.killersNQ.push({ general: gen, pub: pub, precio: precio });
     }
   }
+  t.nCupones = t.killersNQ.length;
   return t;
 }
 
-/**
- * Memoria de cupones (hoja oculta CUPONES WALMART HIST), igual que antes:
- * cada SKU+precio visto en P/Q se sigue aceptando CUPON_DIAS_VIGENCIA días.
- * Protege contra cupones que rotan y contra IMPORTRANGE con caché viejo.
- * Devuelve el mapa de cupones vigentes.
- */
-function cuponesVigentes_(cuponesActuales) {
-  var sh = libro_().getSheetByName(CFG.H.CUPONES);
-  if (!sh) {
-    sh = hoja_(CFG.H.CUPONES, ENC_CUPONES);
-    try { sh.hideSheet(); } catch (e) { /* no importa */ }
-  }
-  var ahora = new Date();
-  var n = sh.getLastRow();
-  var data = n > 1 ? sh.getRange(2, 1, n - 1, 4).getValues() : [];
-  var idx = {};
-  data.forEach(function (r, i) { idx[sku_(r[0]) + '|' + num_(r[1])] = i; });
 
-  var nuevos = [];
-  Object.keys(cuponesActuales).forEach(function (s) {
-    cuponesActuales[s].forEach(function (p) {
-      var k = s + '|' + num_(p);
-      if (idx[k] !== undefined) data[idx[k]][3] = ahora;
-      else { idx[k] = -1; nuevos.push([s, p, ahora, ahora]); }
-    });
-  });
 
-  if (data.length) sh.getRange(2, 4, data.length, 1).setValues(data.map(function (r) { return [r[3]]; }));
-  if (nuevos.length) agregarFilas_(sh, nuevos);
-
-  var limite = ahora.getTime() - CFG.CUPON_DIAS_VIGENCIA * 86400000;
-  var vig = {};
-  var add = function (s, p) {
-    if (!vig[s]) vig[s] = [];
-    if (vig[s].indexOf(p) < 0) vig[s].push(p);
-  };
-  data.forEach(function (r) {
-    var u = (r[3] instanceof Date) ? r[3].getTime() : new Date(r[3]).getTime();
-    if (!isNaN(u) && u >= limite) add(sku_(r[0]), num_(r[1]));
-  });
-  nuevos.forEach(function (r) { add(r[0], num_(r[1])); });
-  return vig;
-}
-
-/**
- * ¿El precio coincide con un killer vigente? Prueba el SKU de la venta tal
- * cual, sin -2..9 y pelado a SKU general (que es como lo guarda P).
- */
-function esPrecioCupon_(cupones, sku, precio) {
-  var llaves = [sku_(sku), skuSinVariante_(sku), skuBase_(sku)];
-  for (var i = 0; i < llaves.length; i++) {
-    var lista = cupones[llaves[i]];
-    if (!lista) continue;
-    for (var j = 0; j < lista.length; j++) {
-      if (Math.abs(lista[j] - precio) <= CFG.TOLERANCIA_PRECIO) return true;
-    }
-  }
-  return false;
-}
 
 /**
  * Mínimo que aplica: SKU exacto y, si no, sin variante (-2..9). Un SKU -CVA
@@ -280,12 +209,20 @@ function minimoDe_(tabla, sku) {
  * listaCaida = P/Q vacía en este instante (IMPORTRANGE cargando): una venta
  * bajo mínimo se deja PENDIENTE en vez de alertar, igual que antes.
  */
-function evaluarVentaWalmart_(f, tabla, cupones, listaCaida) {
+function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   var s = sku_(f[6]);
+  // Si el SKU vendido está vinculado a otro (hoja SKU ASIGNADOS), el precio
+  // mínimo es el del principal y valen los killers de cualquiera del grupo.
+  var g = grupoDe_(asignados, s);
+  var refSku = g ? g.principal : s;
+  var grupo = g ? g.grupo : null;
+  var notaAsig = (g && g.principal !== s) ? 'Asignado a ' + g.principal : '';
   var J = num_(f[9]);
+  var fecha = (f[2] instanceof Date) ? f[2] : fecha_(f[2]);
   var base = skuBase_(s);
   var tipo = tipoPublicacion_(s);
   var origen = esCVA_(s) ? 'CVA' : 'EM';
+  var nota = function (t) { return (t + (notaAsig ? ' · ' + notaAsig : '')).replace(/^ · /, ''); };
 
   if (!esVentaComercial_(f[3], J)) {
     return ['', base, tipo, origen, '—', '', '', 'INTERNA', 'Venta interna, insumo o prueba'];
@@ -294,7 +231,7 @@ function evaluarVentaWalmart_(f, tabla, cupones, listaCaida) {
     return ['', base, tipo, origen, '—', '', '', 'IGNORADO', 'Prefijo viejo RES- / WL- / OB-'];
   }
 
-  var min = minimoDe_(tabla, s);
+  var min = minimoDe_(tabla, refSku) || minimoDe_(tabla, s);
   if (!min) {
     return ['', base, tipo, origen, '—', '', '', 'SIN REFERENCIA',
             'No está en PRECIOS ERIK' + (tipo === 'PREMIUM' ? ' (columna PREMIUM)' : '')];
@@ -304,16 +241,58 @@ function evaluarVentaWalmart_(f, tabla, cupones, listaCaida) {
   var pct = dif / min;
 
   if (J >= min - CFG.TOLERANCIA_PRECIO) {
-    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'OK', ''];
+    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'OK', notaAsig];
   }
-  if (esPrecioCupon_(cupones, s, J)) {
-    return [min, base, tipo, origen, 'CUPON', dif, pct, 'CUPON', 'Precio de killer Walmart'];
+
+  // 1) Killer: mismo precio y la venta cayó dentro de sus fechas
+  var k = killerQueAplica_(killers, s, J, fecha, grupo);
+  if (k) {
+    var fin = k.fin instanceof Date ? ' (hasta ' + Utilities.formatDate(k.fin, CFG.TZ, 'dd/MM') + ')' : '';
+    return [min, base, tipo, origen, 'KILLER', dif, pct, 'KILLER', nota('Killer $' + k.precio + fin)];
   }
-  if (listaCaida) {
-    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'PENDIENTE',
-            'Lista de cupones P/Q vacía: se revisa en la siguiente corrida'];
+
+  // 2) Promoción de comisión (deducida de los killers, ver deducirPromo_).
+  //    Solo entra si J quedó abajo del mínimo: si PRECIOS ERIK ya trae la
+  //    promoción (el site la aplica), la venta ya salió OK arriba.
+  //    mínimo ajustado = mínimo × (1 − comisión normal) ÷ (1 − comisión promo)
+  var p = promoQueAplica_(killers, s, fecha, grupo, tipo === 'PREMIUM');
+  if (p) {
+    var minAj = min * (1 - p.normal) / (1 - p.com);
+    if (J >= minAj - CFG.TOLERANCIA_PRECIO) {
+      return [min, base, tipo, origen, 'PROMOCION', dif, pct, 'PROMOCION',
+              nota('Comisión ' + Math.round(p.com * 1000) / 10 + '% vs ' +
+                   Math.round(p.normal * 1000) / 10 + '% · mínimo ajustado $' + Math.round(minAj))];
+    }
   }
-  return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', ''];
+
+  return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', notaAsig];
+}
+
+// ── SKU ASIGNADOS ─────────────────────────────────────────────────────────
+
+/**
+ * Lee la hoja SKU ASIGNADOS → { SKU: {principal, grupo:[...]} }.
+ * Cada renglón es un grupo: A = SKU principal, B.. = los vinculados.
+ * Cualquier SKU del renglón apunta al mismo grupo.
+ */
+function leerAsignados_() {
+  var mapa = {};
+  var sh = libro_().getSheetByName(CFG.H.ASIGNADOS);
+  if (!sh || sh.getLastRow() < 2) return mapa;
+  var datos = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 1)).getValues();
+  datos.forEach(function (fila) {
+    var grupo = fila.map(sku_).filter(function (x) { return x; });
+    if (grupo.length < 2) return;
+    var info = { principal: grupo[0], grupo: grupo };
+    grupo.forEach(function (x) { mapa[x] = info; mapa[skuBase_(x)] = mapa[skuBase_(x)] || info; });
+  });
+  return mapa;
+}
+
+function grupoDe_(asignados, sku) {
+  if (!asignados) return null;
+  var s = sku_(sku);
+  return asignados[s] || asignados[skuSinVariante_(s)] || null;
 }
 
 // ── Menú y trigger ────────────────────────────────────────────────────────
@@ -336,22 +315,58 @@ function actualizarPreciosMinimos() {
 }
 
 /**
- * Trigger cada 15 min. Solo trabaja si el Log de Site Sheet reportó un
- * cambio de precios desde la última vez. Cero UrlFetch.
+ * Trigger cada 15 min. Cero UrlFetch.
+ *  1) Anota en HISTORICO KILLERS lo que hoy trae N–Q de PRECIOS ERIK.
+ *  2) Si Site Sheet reportó cambio de precios, reescribe A–D.
  */
 function revisarPreciosAuto() {
+  var lock = candado_(10000);
+  if (!lock) return;
   try {
     var huella = huellaSiteSheet_();
-    if (huella && huella === prop_('HUELLA_PRECIOS')) return;
-    var lock = candado_(10000);
-    if (!lock) return;
-    try {
+    if (!huella || huella !== prop_('HUELLA_PRECIOS')) {
       actualizarPreciosErik_(false);
       setProp_('HUELLA_PRECIOS', huella);
-    } finally {
-      lock.releaseLock();
+    }
+    // Una vez por hora: KILLERS ACTIVOS se refresca (estados, KAM nuevos,
+    // mínimos). No toca lo del seller center.
+    if (Date.now() - Number(prop_('KILLERS_REFRESCO', '0')) > 3600000) {
+      asegurarHojasKillers_();
+      migrarCuponesViejos_();
+      reconstruirActivos_();
+      setProp_('KILLERS_REFRESCO', String(Date.now()));
     }
   } catch (e) {
     logError_('PRECIOS', e);
+  } finally {
+    lock.releaseLock();
   }
+}
+
+/**
+ * UNA vez: pasa la memoria vieja de killers (CUPONES WALMART HIST: SKU,
+ * Precio, Primera vez, Última vez) a KILLERS HISTORICO y la borra.
+ */
+function migrarCuponesViejos_() {
+  if (prop_('CUPONES_MIGRADOS') === '1') return;
+  var ss = libro_();
+  var vieja = ss.getSheetByName(CFG.HOJA_CUPONES_VIEJA);
+  if (vieja) {
+    var n = vieja.getLastRow();
+    var lista = [];
+    if (n > 1) {
+      vieja.getRange(2, 1, n - 1, 4).getValues().forEach(function (r) {
+        if (!sku_(r[0]) || !(num_(r[1]) > 0)) return;
+        var ini = fechaK_(r[2]), fin = fechaK_(r[3]);
+        lista.push({ sku: sku_(r[0]), general: skuBase_(r[0]), detalles: 'Memoria del código anterior',
+                     actual: '', negoc: num_(r[1]), cupon: '', recibimos: '', ini: ini, fin: fin,
+                     comCup: '', msi: '', comMsi: '', wfs: '', devol: '', disp: '', obs: '',
+                     origen: 'MEMORIA ANTERIOR', registrado: new Date() });
+      });
+    }
+    guardarEnHistorico_(lista, { n: 0, etiqueta: 'MEMORIA ANTERIOR' });
+    ss.deleteSheet(vieja);
+    logOK_('KILLERS', 'Memoria vieja pasada a KILLERS HISTORICO', { filas: lista.length });
+  }
+  setProp_('CUPONES_MIGRADOS', '1');
 }

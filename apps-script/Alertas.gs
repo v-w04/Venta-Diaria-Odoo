@@ -5,9 +5,12 @@
  *   · WALMART              cada venta con su análisis en M–U
  *   · Histórico de alertas se acumula y nunca se borra
  *
- * Regla (la misma de antes): alerta cuando J (precio unitario) queda por
- * debajo del mínimo EM de PRECIOS ERIK, salvo que J coincida con un cupón
- * de Walmart (P/Q de PRECIOS ERIK, con memoria de 15 días).
+ * Regla: alerta cuando J (precio unitario) queda por debajo del mínimo de
+ * PRECIOS ERIK, salvo que:
+ *   · había un killer de ese SKU a ese precio en la fecha de la venta
+ *     (KILLERS HISTORICO + KILLERS KAM), o
+ *   · había promoción (comisión menor que la normal) y el precio alcanza el
+ *     mínimo ajustado por esa comisión.
  *
  * EM y CVA se revisan igual, cada uno contra el mínimo de su master.
  * Nunca alertan: prefijos RES-/WL-/OB- · ventas internas, insumos y
@@ -21,9 +24,8 @@ function contextoPrecios_() {
     try { actualizarPreciosErik_(true); } catch (e) { logError_('PRECIOS', e); }
     tabla = tablaPrecios_();
   }
-  var listaCaida = tabla.nCupones === 0;
-  var cupones = listaCaida ? cuponesVigentes_({}) : cuponesVigentes_(tabla.cupones);
-  return { tabla: tabla, cupones: cupones, listaCaida: listaCaida };
+  return { tabla: tabla, killers: killersParaValidar_(tabla), listaCaida: false,
+           asignados: leerAsignados_() };
 }
 
 /**
@@ -33,16 +35,13 @@ function contextoPrecios_() {
 function procesarWalmart_(filasWm) {
   var ctx = contextoPrecios_();
   var completas = filasWm.map(function (f) {
-    return f.slice(0, 12).concat(evaluarVentaWalmart_(f, ctx.tabla, ctx.cupones, ctx.listaCaida));
+    return f.slice(0, 12).concat(evaluarVentaWalmart_(f, ctx.tabla, ctx.killers, ctx.listaCaida, ctx.asignados));
   });
 
   var escritas = agregarSinDuplicar_(CFG.H.WALMART, ENC_WALMART, completas);
   var alertas = escritas.filter(function (f) { return f[W.SEM] === 'BAJO MINIMO'; });
   var n = registrarAlertas_(alertas);
 
-  if (ctx.listaCaida && escritas.some(function (f) { return f[W.SEM] === 'PENDIENTE'; })) {
-    logWarn_('ALERTAS', 'Lista de cupones P/Q vacía: ventas bajo mínimo quedan PENDIENTES');
-  }
   return { escritas: escritas.length, alertas: n };
 }
 
@@ -56,8 +55,11 @@ function revisarPendientesWalmart_(incluirSinAnalizar) {
   var n = sh.getLastRow();
   if (n < 2) return out;
 
+  // Solo las últimas 3,000 ventas: un PENDIENTE se resuelve en minutos, no
+  // hace falta leer toda la hoja cada 10 min.
   var ancho = Math.max(Math.min(sh.getMaxColumns(), N_COLS_WALMART), 12);
-  var datos = sh.getRange(2, 1, n - 1, ancho).getValues();
+  var desdeFila = Math.max(2, n - 2999);
+  var datos = sh.getRange(desdeFila, 1, n - desdeFila + 1, ancho).getValues();
   var limite = Date.now() - CFG.DIAS_VENTANA * 86400000;
 
   var aRevisar = [];
@@ -75,8 +77,8 @@ function revisarPendientesWalmart_(incluirSinAnalizar) {
   var ctx = contextoPrecios_();
   var alertas = [];
   aRevisar.forEach(function (i) {
-    var bloque = evaluarVentaWalmart_(datos[i], ctx.tabla, ctx.cupones, ctx.listaCaida);
-    sh.getRange(i + 2, W.REF + 1, 1, bloque.length).setValues([bloque]);
+    var bloque = evaluarVentaWalmart_(datos[i], ctx.tabla, ctx.killers, ctx.listaCaida, ctx.asignados);
+    sh.getRange(i + desdeFila, W.REF + 1, 1, bloque.length).setValues([bloque]);
     if (bloque[W.SEM - W.REF] === 'BAJO MINIMO') {
       alertas.push(datos[i].slice(0, 12).concat(bloque));
     }
@@ -98,19 +100,20 @@ function revisarPendientesWalmart_(incluirSinAnalizar) {
  * No duplica: la llave es SO | SKU | precio, igual que antes.
  */
 var CAMPOS_ALERTA = [
-  { k: 'fecha',    nom: 'Fecha alerta',  alias: ['FECHA ALERTA'] },
+  { k: 'fecha',    nom: 'Fecha alerta',  alias: ['FECHA ALERTA', 'VENTA DIARIA ODOO', 'FECHA'] },
   { k: 'so',       nom: 'SO',            alias: ['SO', 'NUMERO (SO)'] },
   { k: 'cliente',  nom: 'Cliente',       alias: ['CLIENTE'] },
   { k: 'vendedor', nom: 'Vendedor',      alias: ['VENDEDOR'] },
   { k: 'sku',      nom: 'SKU',           alias: ['SKU'] },
   { k: 'producto', nom: 'Producto',      alias: ['PRODUCTO'] },
   { k: 'cantidad', nom: 'Cantidad',      alias: ['CANTIDAD'] },
-  { k: 'precio',   nom: 'J: Precio',     alias: ['J: PRECIO', 'PRECIO UNIT.', 'PRECIO UNIT', 'PRECIO UNITARIO', 'PRECIO VENTA'] },
-  { k: 'minimo',   nom: 'N: Ref',        alias: ['N: REF', 'PRECIO MINIMO', 'PRECIO REFERENCIA'] },
+  { k: 'precio',   nom: 'J: Precio',     alias: ['J: PRECIO', 'PRECIO UNIT.', 'PRECIO UNIT', 'PRECIO UNITARIO', 'PRECIO VENTA', 'VENTA'] },
+  { k: 'minimo',   nom: 'N: Ref',        alias: ['N: REF', 'PRECIO MINIMO', 'PRECIO REFERENCIA', 'ERIK'] },
   { k: 'dif',      nom: 'Diff (N-J)',    alias: ['DIFF (N-J)', 'DIFERENCIA'] },
   { k: 'importe',  nom: 'Importe',       alias: ['IMPORTE', 'IMPORTE LINEA'] },
   { k: 'total',    nom: 'Total',         alias: ['TOTAL', 'TOTAL ORDEN'] },
   { k: 'pub',      nom: 'Publicación',   alias: ['PUBLICACION'] },
+  { k: 'origen',   nom: 'Origen',        alias: ['ORIGEN'] },
   { k: 'fventa',   nom: 'Fecha venta',   alias: ['FECHA VENTA'] },
   { k: 'id',       nom: 'ID Línea',      alias: ['ID LINEA'] }
 ];
@@ -165,7 +168,7 @@ function registrarAlertas_(filas) {
       fecha: ahora, so: f[1], cliente: f[3], vendedor: f[4], sku: f[6],
       producto: f[7], cantidad: f[8], precio: num_(f[9]), minimo: min,
       dif: min - num_(f[9]), importe: num_(f[10]), total: num_(f[11]),
-      pub: f[W.PUB], fventa: f[2], id: f[0]
+      pub: f[W.PUB], origen: 'WALMART-' + f[W.ORIGEN], fventa: f[2], id: f[0]
     };
     var fila = new Array(ancho).fill('');
     Object.keys(pos).forEach(function (key) { fila[pos[key]] = v[key]; });
@@ -188,7 +191,7 @@ function resumenWalmart() {
   var n = sh.getLastRow();
   var ancho = Math.max(Math.min(sh.getMaxColumns(), N_COLS_WALMART), 12);
   var datos = sh.getRange(2, 1, n - 1, ancho).getValues();
-  var c = { OK: 0, 'BAJO MINIMO': 0, CUPON: 0, PENDIENTE: 0, 'SIN REFERENCIA': 0, otros: 0, sin: 0 };
+  var c = { OK: 0, 'BAJO MINIMO': 0, KILLER: 0, PROMOCION: 0, CUPON: 0, PENDIENTE: 0, 'SIN REFERENCIA': 0, otros: 0, sin: 0 };
   var importe = 0, perdida = 0;
   datos.forEach(function (f) {
     importe += num_(f[10]);
@@ -205,7 +208,8 @@ function resumenWalmart() {
     'WALMART — resumen\n\n' +
     'Ventas: ' + datos.length + '\n' +
     '  En precio: ' + c.OK + '\n' +
-    '  Con cupón: ' + c.CUPON + '\n' +
+    '  Con killer: ' + (c.KILLER + c.CUPON) + '\n' +
+    '  Con promoción: ' + c.PROMOCION + '\n' +
     '  Bajo mínimo: ' + c['BAJO MINIMO'] + '\n' +
     '  Pendientes: ' + c.PENDIENTE + '\n' +
     '  Sin precio en PRECIOS ERIK: ' + c['SIN REFERENCIA'] + '\n' +

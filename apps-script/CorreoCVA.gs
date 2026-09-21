@@ -1,20 +1,17 @@
 /**
- * VENTA DIARIA ODOO 2026 — Correo de ventas CVA
+ * VENTA DIARIA ODOO 2026 — Reporte diario de ventas CVA
  *
- * ÚNICO correo que manda este proyecto, y ÚNICO destinatario:
- *   victor.walmart.04@gmail.com   (CFG.CORREO_CVA)
+ * UN correo al día, a partir de las CFG.CVA_HORA_REPORTE (8 am), a un solo
+ * destinatario: victor.walmart.04@gmail.com (CFG.CORREO_CVA).
  *
- * No avisa si el precio está bien o mal. Avisa QUE HUBO VENTAS de producto
- * CVA, de cualquier plataforma, con el detalle. Nada más.
+ * Trae todo lo vendido de CVA desde el correo anterior (el día completo de
+ * ayer): total en pesos, piezas y la lista. Nada más. Si no hubo ventas, no
+ * se manda nada.
  *
- * Cómo sabe qué avisar: guarda hasta qué fila de PEDIDOS CVA ya avisó
- * (CVA_FILA_AVISADA). Lo nuevo es todo lo que esté debajo. Así no depende
- * de guardar las filas en Script Properties (tope de 9 KB por valor).
- *
- * Agrupado: máximo un correo cada 20 minutos (MailApp: 100/día en Gmail).
+ * No necesita trigger propio: cada importación (cada 10 min) revisa si ya
+ * toca mandarlo. Cómo sabe qué incluir: guarda hasta qué fila de PEDIDOS CVA
+ * ya reportó (CVA_FILA_AVISADA).
  */
-
-var CVA_MIN_ENTRE_CORREOS = 20;
 
 /**
  * Se llama ANTES de escribir en PEDIDOS CVA. La primera vez fija la marca en
@@ -23,86 +20,79 @@ var CVA_MIN_ENTRE_CORREOS = 20;
 function marcaCvaInicial_() {
   if (prop_('CVA_FILA_AVISADA') !== '') return;
   var sh = libro_().getSheetByName(CFG.H.CVA);
-  setProp_('CVA_FILA_AVISADA', String(sh ? Math.max(sh.getLastRow(), 1) : 1));
+  setProp_('CVA_FILA_AVISADA', String(sh ? Math.max(ultimaFilaColA_(sh), 1) : 1));
 }
 
-/** Manda el correo con las filas de PEDIDOS CVA que aún no se avisaron. */
-function enviarCorreoCVA_(forzar) {
+/** Manda el reporte del día si ya es hora y no se ha mandado hoy. */
+function enviarCorreoCVA_() {
   try {
+    var hoy = hoy_();
+    var hora = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
+    if (hora < CFG.CVA_HORA_REPORTE) return false;
+    if (prop_('CVA_DIA_REPORTE') === hoy) return false;
+
     var sh = libro_().getSheetByName(CFG.H.CVA);
     if (!sh) return false;
-    var hasta = sh.getLastRow();
-    var desde = Number(prop_('CVA_FILA_AVISADA', '1'));
-    if (hasta <= desde) return false;
+    var hasta = ultimaFilaColA_(sh);
+    var desde = Number(prop_('CVA_FILA_AVISADA', String(hasta)));
 
-    var ultimo = Number(prop_('CVA_ULTIMO_CORREO', '0'));
-    if (!forzar && ultimo && (Date.now() - ultimo) / 60000 < CVA_MIN_ENTRE_CORREOS) {
-      return false;   // se junta con el siguiente
-    }
+    setProp_('CVA_DIA_REPORTE', hoy);           // una vez al día, pase lo que pase
+    if (hasta <= desde) return false;           // sin ventas: no se manda nada
 
     var filas = sh.getRange(desde + 1, 1, hasta - desde, 12).getValues()
       .filter(function (f) { return f[0] !== '' && f[0] !== null; });
-    if (!filas.length) { setProp_('CVA_FILA_AVISADA', String(hasta)); return false; }
+    setProp_('CVA_FILA_AVISADA', String(hasta));
+    if (!filas.length) return false;
+
+    var total = 0, piezas = 0;
+    filas.forEach(function (f) { total += num_(f[10]); piezas += num_(f[8]); });
 
     MailApp.sendEmail({
       to: CFG.CORREO_CVA,
-      subject: '🟣 Ventas CVA — ' + filas.length + ' línea(s) · ' + hoy_(),
-      htmlBody: armarCorreoCVA_(filas),
+      subject: 'Ventas CVA — $' + dinero_(total) + ' · ' + piezas + ' pieza(s)',
+      htmlBody: armarCorreoCVA_(filas, total, piezas),
       name: 'Venta Diaria Odoo'
     });
-
-    setProp_('CVA_FILA_AVISADA', String(hasta));
-    setProp_('CVA_ULTIMO_CORREO', String(Date.now()));
-    logOK_('CVA', 'Correo de ventas CVA enviado', { lineas: filas.length, a: CFG.CORREO_CVA });
+    logOK_('CVA', 'Reporte diario de ventas CVA enviado',
+           { lineas: filas.length, piezas: piezas, total: total, a: CFG.CORREO_CVA });
     return true;
 
   } catch (e) {
-    logError_('CVA', e, { nota: 'No se pudo mandar el correo de ventas CVA' });
+    logError_('CVA', e, { nota: 'No se pudo mandar el reporte diario de ventas CVA' });
     return false;
   }
 }
 
-function armarCorreoCVA_(filas) {
-  var total = 0, piezas = 0, tr = '';
-  var td = 'padding:6px 8px;border-bottom:1px solid #eee';
-  for (var i = 0; i < filas.length; i++) {
-    var f = filas[i];
-    total += num_(f[10]);
-    piezas += num_(f[8]);
-    var fd = (f[2] instanceof Date) ? f[2] : new Date(f[2]);
-    var fecha = isNaN(fd.getTime()) ? String(f[2]).slice(0, 16)
-                                    : Utilities.formatDate(fd, CFG.TZ, 'dd/MM HH:mm');
-    tr += '<tr>' +
-      '<td style="' + td + '">' + fecha + '</td>' +
-      '<td style="' + td + '"><b>' + f[3] + '</b></td>' +
-      '<td style="' + td + ';font-family:monospace">' + f[6] + '</td>' +
-      '<td style="' + td + '">' + String(f[7]).slice(0, 60) + '</td>' +
-      '<td style="' + td + ';text-align:right">' + f[8] + '</td>' +
-      '<td style="' + td + ';text-align:right">$' +
-        num_(f[9]).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + '</td>' +
-      '<td style="' + td + ';text-align:right"><b>$' +
-        num_(f[10]).toLocaleString('es-MX', { minimumFractionDigits: 2 }) + '</b></td>' +
-      '<td style="' + td + ';font-size:12px;color:#666">' + f[1] + '</td>' +
-      '</tr>';
-  }
+function dinero_(n) {
+  return Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-  return '' +
-  '<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1a1a1a">' +
-    '<h2 style="margin:0 0 4px">🟣 Ventas CVA</h2>' +
-    '<p style="margin:0 0 16px;color:#666">' +
-      filas.length + ' línea(s) · ' + piezas + ' pieza(s) · ' +
-      '<b>$' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }) + '</b>' +
-    '</p>' +
-    '<table style="border-collapse:collapse;width:100%;font-size:13px">' +
-      '<thead><tr style="background:#f5f5f5;text-align:left">' +
-        '<th style="padding:8px">Fecha</th><th style="padding:8px">Plataforma</th>' +
-        '<th style="padding:8px">SKU</th><th style="padding:8px">Producto</th>' +
-        '<th style="padding:8px;text-align:right">Cant</th>' +
-        '<th style="padding:8px;text-align:right">P. unit</th>' +
-        '<th style="padding:8px;text-align:right">Importe</th>' +
-        '<th style="padding:8px">SO</th>' +
-      '</tr></thead><tbody>' + tr + '</tbody>' +
-    '</table>' +
-    '<p style="margin-top:20px;font-size:12px;color:#999">Venta Diaria Odoo 2026 · hoja PEDIDOS CVA</p>' +
-  '</div>';
+/** Correo sencillo: total, piezas y la lista. */
+function armarCorreoCVA_(filas, total, piezas) {
+  var td = 'padding:6px 10px;border-bottom:1px solid #eee;';
+  var th = 'padding:6px 10px;border-bottom:2px solid #ccc;text-align:left;';
+  var tr = filas.map(function (f) {
+    var fd = (f[2] instanceof Date) ? f[2] : new Date(f[2]);
+    var fecha = isNaN(fd.getTime()) ? String(f[2]).slice(0, 10)
+                                    : Utilities.formatDate(fd, CFG.TZ, 'dd/MM');
+    return '<tr>' +
+      '<td style="' + td + '">' + fecha + '</td>' +
+      '<td style="' + td + '">' + f[3] + '</td>' +
+      '<td style="' + td + 'font-family:monospace">' + f[6] + '</td>' +
+      '<td style="' + td + '">' + String(f[7]).replace(/^\[[^\]]*\]\s*/, '').slice(0, 55) + '</td>' +
+      '<td style="' + td + 'text-align:right">' + num_(f[8]) + '</td>' +
+      '<td style="' + td + 'text-align:right">$' + dinero_(num_(f[10])) + '</td>' +
+      '</tr>';
+  }).join('');
+
+  return '<div style="font-family:Arial,sans-serif;font-size:14px;color:#222">' +
+    '<p style="font-size:16px;margin:0 0 12px">' +
+      '<b>Ventas CVA: $' + dinero_(total) + '</b> · ' + piezas + ' pieza(s)</p>' +
+    '<table style="border-collapse:collapse;font-size:13px">' +
+      '<tr><th style="' + th + '">Fecha</th><th style="' + th + '">Plataforma</th>' +
+      '<th style="' + th + '">SKU</th><th style="' + th + '">Producto</th>' +
+      '<th style="' + th + 'text-align:right">Piezas</th>' +
+      '<th style="' + th + 'text-align:right">Importe</th></tr>' +
+      tr +
+    '</table></div>';
 }

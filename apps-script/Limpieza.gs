@@ -86,7 +86,9 @@ function lpBorrarHojas(nombres, conRespaldo) {
         .makeCopy('RESPALDO Venta Diaria Odoo ' + ahora_());
       respaldo = copia.getUrl();
     } catch (e) {
-      logWarn_('LIMPIEZA', 'No se pudo hacer el respaldo', { error: String(e) });
+      logWarn_('LIMPIEZA', 'No se pudo hacer el respaldo: no se borró nada', { error: String(e) });
+      throw new Error('No se pudo hacer el respaldo, así que NO se borró ninguna hoja.\n' +
+                      'Quita la palomita de respaldo si quieres borrar sin copia.\n\n' + e);
     }
   }
 
@@ -140,10 +142,9 @@ function lpCompactar(nombres) {
 
     // Colchón: 200 filas para que la importación no tenga que insertar cada vez.
     var filasObjetivo = filasUsadas + 200;
-    // Estas dos tienen fórmulas que se desbordan hacia abajo (IMPORTRANGE en
-    // P–Q de PRECIOS ERIK, ARRAYFORMULA en N de Órdenes). Quitarles filas las
-    // dejaría sin espacio para crecer: solo se les recortan columnas.
-    if (lista[i] === CFG.H.PRECIOS || lista[i] === CFG.H.VENTAS) {
+    // PRECIOS ERIK tiene fórmulas que se desbordan hacia abajo (N–Q). Quitarle
+    // filas la dejaría sin espacio para crecer: solo se le recortan columnas.
+    if (lista[i] === CFG.H.PRECIOS) {
       filasObjetivo = sh.getMaxRows();
     }
     var colsObjetivo  = colsUsadas;

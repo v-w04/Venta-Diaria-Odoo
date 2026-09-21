@@ -46,9 +46,9 @@ function quitarTriggers(silencioso) {
 /** Crea las hojas del sistema que falten (lo usa instalarTriggers). */
 function crearHojas(silencioso) {
   hoja_(CFG.H.WALMART, ENC_WALMART);
-  hoja_(CFG.H.VENTAS,  ENC_VENTAS);
   hoja_(CFG.H.CVA,     ENC_VENTAS);
   hoja_(CFG.H.LOG,     ENC_LOG);
+  hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
   if (!libro_().getSheetByName(CFG.H.ALERTAS)) {
     hoja_(CFG.H.ALERTAS, CAMPOS_ALERTA.map(function (c) { return c.nom; }));
   }
