@@ -28,6 +28,10 @@ var CFG = {
   SITE_HOJAS_MINIMO: ['Precios EM Minimo', 'Precios CVA Minimo'],
   SITE_HOJA_LOG:    'Log',
 
+  // Dashboard de Walmart (WM_Inv, "Walmart API"): de su hoja Inventario salen
+  // departamento, stock y nombre para la promoción de categoría. Solo lectura.
+  WM_DASH: { ID: '122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q', HOJA: 'Inventario' },
+
   // Empresa de Odoo (la instancia es multiempresa)
   COMPANY_NAME: 'ElectronicsMexico',
 

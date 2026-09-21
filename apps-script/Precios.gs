@@ -253,16 +253,23 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
     return [min, base, tipo, origen, 'KILLER', dif, pct, 'KILLER', nota('Killer $' + k.precio + fin)];
   }
 
-  // 2) Promoción de comisión (deducida de los killers, ver deducirPromo_).
-  //    Solo entra si J quedó abajo del mínimo: si PRECIOS ERIK ya trae la
-  //    promoción (el site la aplica), la venta ya salió OK arriba.
+  // 2) Promoción de comisión. Se ajusta el mínimo UNA sola vez, y solo si el
+  //    site no la trae ya (COMISIONES, "YA APLICADA EN EL SITE"):
+  //      · la del killer de ese SKU (comisión del cupón / MSI), o si no hay,
+  //      · la de su categoría (COMISIONES col. D o deducida de los killers).
   //    mínimo ajustado = mínimo × (1 − comisión normal) ÷ (1 − comisión promo)
-  var p = promoQueAplica_(killers, s, fecha, grupo, tipo === 'PREMIUM');
+  //    El killer (paso 1) es precio exacto y no se combina con nada.
+  var premium = tipo === 'PREMIUM';
+  var p = promoQueAplica_(killers, s, fecha, grupo, premium);
+  // Rebaja de comisión BASE cuya categoría ya está aplicada en el site: el
+  // mínimo ya viene rebajado, no se vuelve a ajustar (sí la de SOLO MSI).
+  if (p && !p.soloMsi && promoYaEnSite_(killers, s, grupo)) p = null;
+  if (!p) p = promoCategoriaDe_(killers, s, grupo, premium);
   if (p) {
     var minAj = min * (1 - p.normal) / (1 - p.com);
     if (J >= minAj - CFG.TOLERANCIA_PRECIO) {
       return [min, base, tipo, origen, 'PROMOCION', dif, pct, 'PROMOCION',
-              nota('Comisión ' + Math.round(p.com * 1000) / 10 + '% vs ' +
+              nota('Promoción ' + (p.nombre ? p.nombre + ' ' : '') + Math.round(p.com * 1000) / 10 + '% vs ' +
                    Math.round(p.normal * 1000) / 10 + '% · mínimo ajustado $' + Math.round(minAj))];
     }
   }

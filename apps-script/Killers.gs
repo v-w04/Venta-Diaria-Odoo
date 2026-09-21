@@ -79,10 +79,17 @@ var ENC_K_ACT = ['SKU', 'Detalles del artículo', 'PRECIO', 'Precio negociado',
                  'ORIGEN', 'ESTADO', 'CARGA KILLER', 'OTROS RANGOS'];
 var KA = { SKU: 0, CAT: 19 };   // T "KAM" = categoría
 
-var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'REDUCCION KAM'];
-// REDUCCION KAM (puntos de comisión): SOLO para killers de KILLERS KAM que no
-// traen "COMISION CUPON". Los del seller center NO la usan: su promoción se
-// deduce sola de "Comisión sobre el cupón killer" y "Comisión MSI".
+var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'PROMO CATEGORIA (puntos)', 'MARCAS (prefijo SKU)',
+                 'YA APLICADA EN EL SITE'];
+// PROMO CATEGORIA (puntos): cuando el KAM baja la comisión a TODA una
+// categoría (ej. Cámaras y Lentes 7 → 10% pasa a 3%). Con eso, todos los SKUs
+// de esa categoría con stock (del dashboard WM_Inv) entran a KILLERS ACTIVOS.
+// Vacío = sin promoción. MARCAS: prefijos de SKU que también cuentan como de
+// esa categoría aunque Walmart los tenga en otro departamento (DJI, CAN…).
+// YA APLICADA EN EL SITE: SI (o vacío) = la promoción ya la cargaste en el site,
+// así que el mínimo de PRECIOS ERIK YA viene rebajado → aquí NO se vuelve a
+// rebajar (Carga = mínimo, y las ventas se revisan contra ese mínimo).
+// NO = el site no la trae → aquí se recalcula la Carga y se ajusta el mínimo.
 
 // Lo que MSI le suma a la comisión normal. Se deduce de los killers pegados
 // (Comisión MSI − Comisión sobre el cupón); este es el respaldo.
@@ -201,13 +208,33 @@ function comisionesNormales_() {
       });
     }
     sh = hoja_(K_COM, ENC_K_COM);
-    sh.getRange(1, 1, 1, 4).setValues([ENC_K_COM]);
-    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 4).clearContent();
-    var todas = COMISIONES_INICIALES.concat(extra);
-    sh.getRange(2, 1, todas.length, 4).setValues(todas);
+    var W5 = ENC_K_COM.length;
+    sh.getRange(1, 1, 1, W5).setValues([ENC_K_COM]);
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, W5).clearContent();
+    var todas = COMISIONES_INICIALES.concat(extra).map(function (r) {
+      r = r.slice(0, W5); while (r.length < W5) r.push(''); return r;
+    });
+    sh.getRange(2, 1, todas.length, W5).setValues(todas);
     sh.getRange(2, 2, todas.length, 1).setNumberFormat('0.00%');
     sh.getRange(2, 4, todas.length, 1).setNumberFormat('0.0');
     setProp_('COMISIONES_V6', '1');
+  }
+  if (prop_('COMISIONES_COLS_V8') !== '1') {
+    // D pasa a "PROMO CATEGORIA", se agrega E "MARCAS". Tus datos no se tocan,
+    // solo se precargan las marcas de Cámaras y Lentes si están vacías. La D se
+    // deja vacía: la promoción se deduce sola de los killers.
+    if (sh.getMaxColumns() < ENC_K_COM.length) sh.insertColumnsAfter(sh.getMaxColumns(), ENC_K_COM.length - sh.getMaxColumns());
+    sh.getRange(1, 4, 1, 3).setValues([[ENC_K_COM[3], ENC_K_COM[4], ENC_K_COM[5]]]);
+    var nn = sh.getLastRow();
+    if (nn > 1) {
+      var dd = sh.getRange(2, 1, nn - 1, 5).getValues();
+      for (var q = 0; q < dd.length; q++) {
+        if (norm_(dd[q][0]) === 'CAMARAS Y LENTES') {
+          if (dd[q][4] === '' || dd[q][4] === null) sh.getRange(q + 2, 5).setValue('DJI, NIK, CAN, FUJ');
+        }
+      }
+    }
+    setProp_('COMISIONES_COLS_V8', '1');
   }
   var m = {};
   var n = sh.getLastRow();
@@ -233,18 +260,87 @@ function comisionesNormales_() {
   return m;
 }
 
-/** CATEGORIA (y otros nombres) → reducción KAM en fracción (7 puntos → 0.07). */
-function reduccionesKam_() {
-  comisionesNormales_();                     // asegura la hoja
-  var sh = libro_().getSheetByName(K_COM), m = {};
-  if (!sh || sh.getLastRow() < 2) return m;
-  sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().forEach(function (r) {
-    var d = descKam_(r[3]);
-    if (!norm_(r[0]) || !d) return;
-    m[norm_(r[0])] = d;
-    String(r[2] || '').split(',').forEach(function (x) { if (norm_(x)) m[norm_(x)] = d; });
+/**
+ * Categorías de COMISIONES: { nombres: {NOMBRE o ALIAS normalizado → cat},
+ * marcas: [{pref, cat}], cats: {cat: {nombre, normal, red, origen}} }.
+ * red = PROMO CATEGORIA capturada (columna D) en fracción, 7 → 0.07; 0 si vacía.
+ */
+function promosCategoria_() {
+  var com = comisionesNormales_();              // asegura hoja y columnas
+  var sh = libro_().getSheetByName(K_COM);
+  var out = { nombres: {}, marcas: [], cats: {} };
+  if (!sh || sh.getLastRow() < 2) return out;
+  var ancho = Math.min(Math.max(sh.getLastColumn(), 5), 6);
+  sh.getRange(2, 1, sh.getLastRow() - 1, ancho).getValues().forEach(function (r) {
+    var cat = norm_(r[0]);
+    if (!cat) return;
+    var red = descKam_(r[3]);
+    out.cats[cat] = { nombre: String(r[0]), normal: com[cat], red: red, origen: red ? 'COMISIONES' : '',
+                      enSite: norm_(r[5]) !== 'NO' };
+    out.nombres[cat] = cat;
+    String(r[2] || '').split(',').forEach(function (x) {
+      var k = norm_(x);
+      if (!k) return;
+      if (out.nombres[k] && out.nombres[k] !== cat) out.nombres[k] = null;   // alias ambiguo
+      else if (out.nombres[k] !== null) out.nombres[k] = cat;
+    });
+    String(r[4] || '').split(',').forEach(function (x) {
+      var p = norm_(x).replace(/-+$/, '');
+      if (p) out.marcas.push({ pref: p + '-', cat: cat });
+    });
   });
-  return m;
+  return out;
+}
+
+/** Categoría (clave de COMISIONES) de un SKU según su departamento o su marca. */
+function categoriaDeSku_(pc, sku, depto) {
+  var cat = depto ? pc.nombres[norm_(depto)] : null;
+  if (cat) return cat;
+  for (var j = 0; j < pc.marcas.length; j++) {
+    if (sku.indexOf(pc.marcas[j].pref) === 0) return pc.marcas[j].cat;
+  }
+  return null;
+}
+
+function leerDashboard_() {
+  if (leerDashboard_.cache) return leerDashboard_.cache;
+  var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName(CFG.WM_DASH.HOJA);
+  if (!sh) throw new Error('El dashboard de Walmart no tiene la hoja "' + CFG.WM_DASH.HOJA + '"');
+  var n = sh.getLastRow(), nc = sh.getLastColumn();
+  var out = [];
+  if (n >= 2) {
+    var datos = sh.getRange(1, 1, n, nc).getValues();
+    var m = mapaColumnas_(datos[0]);
+    var c = function (k) { return m[norm_(k)]; };
+    var iSku = c('sku'), iShelf = c('shelf'), iNom = c('productName'),
+        iTot = c('stockTotal'), iWfs = c('wfsDisponible');
+    if (iSku === undefined || iShelf === undefined) throw new Error('El dashboard no trae sku/shelf');
+    var numero = function (v) { return v instanceof Date ? 0 : num_(v); };   // 0 con formato fecha
+    for (var i = 1; i < datos.length; i++) {
+      var f = datos[i], s = sku_(f[iSku]);
+      if (!s) continue;
+      out.push({ sku: s, shelf: String(f[iShelf] || ''), nombre: iNom === undefined ? '' : String(f[iNom] || ''),
+                 tot: iTot === undefined ? 0 : numero(f[iTot]), wfs: iWfs === undefined ? 0 : numero(f[iWfs]) });
+    }
+  }
+  leerDashboard_.cache = out;
+  return out;
+}
+
+function skusPromoCategoria_(pc) {
+  var conPromo = Object.keys(pc.cats).filter(function (c) { return pc.cats[c].red > 0; });
+  if (!conPromo.length) return [];
+  var out = [];
+  leerDashboard_().forEach(function (d) {
+    var s = d.sku;
+    if (skuIgnorado_(s) || /-(OB|OPENBOX)$/.test(s)) return;
+    if (tipoPublicacion_(s) === 'PREMIUM') return;   // MSI: la promo ya la aplica el KAM
+    var cat = categoriaDeSku_(pc, s, d.shelf);
+    if (!cat || !(pc.cats[cat].red > 0)) return;
+    if (!(d.tot >= 4 || d.wfs > 0)) return;
+    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: d.tot });
+  });
+  return out;
 }
 
 /** Nombre oficial de la categoría de Walmart (como la pide el site). */
@@ -394,7 +490,8 @@ function procesarKillers() {
       'KILLERS ACTIVOS: ' + r.activos + '  ·  con promoción: ' + r.promos +
       '  ·  por iniciar: ' + r.porIniciar + '\n' +
       'Salieron de ACTIVOS (ya no vienen en el seller center o vencieron): ' + r.salieron +
-      '\nCon promoción de comisión (columna X): ' + (r.promociones || 0));
+      '\nKillers con promoción de comisión (columna X): ' + (r.promociones || 0) +
+      '\nSKUs por promoción de CATEGORÍA (sin killer, del dashboard): ' + (r.promoCategoria || 0));
   } catch (e) {
     logError_('KILLERS', e);
     avisar_('No se pudieron procesar los killers:\n\n' + e);
@@ -427,6 +524,7 @@ function procesarKillers_() {
   res.activos = a.total; res.promos = a.promos; res.porIniciar = a.porIniciar;
   res.sinCategoria = a.sinCategoria;
   res.promociones = a.promociones;
+  res.promoCategoria = a.promoCategoria || 0;
   res.salieron = Math.max(0, antes - a.total + a.entraron);
 
   sh.clearContents();
@@ -527,7 +625,7 @@ function leerKam_(tabla) {
   var sh = libro_().getSheetByName(K_KAM);
   if (!sh || sh.getLastRow() < 2) return [];
   var ancho = Math.max(Math.min(sh.getLastColumn(), ENC_K_KAM.length), 9);
-  var rCat = reduccionesKam_(), com = comisionesNormales_();
+  var rCat = {}, com = comisionesNormales_();
   var descDe = function (r) { return descKam_(r[8]); };
   return sh.getRange(2, 1, sh.getLastRow() - 1, ancho).getValues()
     .filter(function (r) { return sku_(r[0]) && (num_(r[1]) > 0 || descDe(r) > 0); })
@@ -640,6 +738,12 @@ function reconstruirActivos_() {
   var n0 = ultimaFilaColA_(sh);
   if (n0 > 1) sh.getRange(2, 1, n0 - 1, 1).getValues().forEach(function (r) { previos[sku_(r[0])] = true; });
 
+  // Departamento de Walmart (dashboard) como categoría cuando no la capturaste
+  var depto = {};
+  try { leerDashboard_().forEach(function (d) { if (d.shelf) depto[d.sku] = d.shelf; }); }
+  catch (e) { logWarn_('KILLERS', 'No se pudo leer el dashboard de Walmart', { error: String(e && e.message || e) }); }
+
+  var pc = promosCategoria_(), votos = {};
   var hojaPrecios = "'" + CFG.H.PRECIOS + "'!";
   var res = { total: 0, promos: 0, porIniciar: 0, sinCategoria: 0, entraron: 0 };
   var filas = [], promos = [];
@@ -649,16 +753,32 @@ function reconstruirActivos_() {
     return { sku: sku, v: x && x.estado === 'VIGENTE' ? 0 : 1 };
   }).sort(function (a, b) { return (a.v - b.v) || (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0); })
     .map(function (x) { return x.sku; });
+  var vigentes = [], porIniciar = [];
   orden.forEach(function (sku) {
+    var x = rangoQueAplica_(porSku[sku], ahora);
+    if (x) (x.estado === 'VIGENTE' ? vigentes : porIniciar).push(sku);
+  });
+  var conKiller = {};                    // solo killers VIGENTES tapan la promo
+  vigentes.forEach(function (sku) { conKiller[sku] = true; });
+
+  var filaKiller = function (sku) {
     var rangos = porSku[sku];
     var sel = rangoQueAplica_(rangos, ahora);
     if (!sel) return;
     var k = sel.k;
     var r = filas.length + 2;                       // renglón en la hoja
-    var cat = k.categoria || cats[k.sku] || cats[k.general] || '';
+    var cat = k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
     var pr = deducirPromo_(k, cat, com, extra);
     var promo = pr.red > 0.0001;
     if (promo) promos.push({ k: k, cat: cat, pr: pr });
+    // Voto: ¿los killers de esta categoría traen la comisión base rebajada?
+    var ck = categoriaDeSku_(pc, k.sku, depto[k.sku] || cat);
+    if (ck && sel.estado === 'VIGENTE') {
+      var v = votos[ck] = votos[ck] || { total: 0, red: {} };
+      v.total++;
+      var rc = Math.round(pr.redCla * 1000) / 1000;
+      if (rc > 0) v.red[rc] = (v.red[rc] || 0) + 1;
+    }
     var otros = rangos.filter(function (x) { return x !== k && x.fin instanceof Date && ms_(x.fin) >= ahora; })
       .map(function (x) { return '$' + x.negoc + ' ' + ddmm_(x.ini).slice(0, 5) + '–' + ddmm_(x.fin).slice(0, 5); })
       .join(' · ');
@@ -691,7 +811,76 @@ function reconstruirActivos_() {
       pr.normal, promo ? Math.round(pr.red * 1000) / 10 : '',          // W X (puntos)
       k.origen, sel.estado, k.carga, otros                              // Y–AB
     ]);
+  };
+
+  // Promoción de CATEGORÍA: los SKUs NO MSI de la categoría, con stock y sin
+  // killer vigente (a los MSI el KAM ya se las aplica en el seller center).
+  // El site NO trae la promoción, así que el precio de carga se rehace aquí
+  // con la comisión rebajada, sobre el mínimo del site:
+  //   · YA APLICADA EN EL SITE = SI → Carga = el mínimo del site tal cual.
+  //   · NO → Carga = mínimo × (1 − comisión normal) ÷ (1 − comisión con promo),
+  //     redondeado a terminar en 9.
+  var filaPromoCat = function (p) {
+    var r = filas.length + 2;
+    var info = pc.cats[p.cat];
+    var llave = llavePrecio_(tabla, p.sku);
+    var colMin = tipoPublicacion_(p.sku) === 'PREMIUM' ? 'D' : 'C';
+    var normal = info.normal === undefined ? '' : info.normal;
+    var fin = normal === '' ? '' : Math.round((normal - info.red) * 1000) / 1000;
+    if (!previos[p.sku]) res.entraron++;
+    res.promoCategoria++;
+    filas.push([
+      p.sku, p.nombre,
+      '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
+        hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
+      (info.enSite || normal === '' || fin === '') ? '=C' + r :   // ya rebajado en el site
+        '=IF(ISNUMBER(C' + r + '),INT(C' + r + '*' + (1 - normal).toFixed(4) + '/' +
+        (1 - fin).toFixed(4) + '/10)*10+9,"")',                         // D precio con promo
+      '',                                                               // E
+      '=IF(D' + r + '="","",D' + r + '+N(E' + r + '))',                 // F PAGAN
+      '=IF(AND(ISNUMBER(C' + r + '),ISNUMBER(F' + r + ')),F' + r + '/C' + r + ',"")', // G %
+      '=D' + r,                                                         // H Carga
+      '', '', '',                                                       // I J K
+      fin, '', fin === '' ? '' : Math.round((fin + extra) * 1000) / 1000, // L M N
+      '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
+      'SI', info.nombre,                                                // S T
+      skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
+      'PROMO CATEGORIA', 'VIGENTE', info.origen, info.enSite ? 'Ya aplicada en el site' : 'Recalculada aquí' // Y–AB
+    ]);
+  };
+
+  vigentes.forEach(filaKiller);
+
+  // Promoción de categoría: la de COMISIONES (col. D) manda; si está vacía,
+  // se deduce de los killers vigentes: si 2 o más killers de la categoría
+  // traen la misma rebaja de comisión base, esa es la promoción de la categoría.
+  Object.keys(votos).forEach(function (ck) {
+    var info = pc.cats[ck];
+    if (!info || info.red > 0) return;
+    var mejor = 0, n = 0;
+    Object.keys(votos[ck].red).forEach(function (rc) {
+      if (votos[ck].red[rc] > n) { n = votos[ck].red[rc]; mejor = Number(rc); }
+    });
+    if (n >= 2) { info.red = mejor; info.origen = 'DEDUCIDA DE KILLERS'; }
   });
+  var guardar = {};
+  Object.keys(pc.cats).forEach(function (ck) {
+    var i = pc.cats[ck];
+    if (i.red > 0 && i.normal !== undefined) guardar[ck] = { red: i.red, normal: i.normal, nombre: i.nombre, origen: i.origen, enSite: i.enSite };
+  });
+  setProp_('KILLERS_PROMO_CAT', JSON.stringify(guardar));
+  res.promoCat = guardar;
+
+  var extraCat = [];
+  res.promoCategoria = 0;
+  try {
+    extraCat = skusPromoCategoria_(pc).filter(function (p) { return !conKiller[p.sku]; });
+  } catch (e) {
+    logWarn_('KILLERS', 'No se pudo leer el dashboard de Walmart (promoción de categoría)', { error: String(e && e.message || e) });
+  }
+
+  extraCat.sort(function (a, b) { return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0; }).forEach(filaPromoCat);
+  porIniciar.forEach(filaKiller);
 
   var ancho = Math.max(sh.getLastColumn(), ENC_K_ACT.length);
   if (sh.getMaxColumns() < ancho) sh.insertColumnsAfter(sh.getMaxColumns(), ancho - sh.getMaxColumns());
@@ -824,6 +1013,23 @@ function killersParaValidar_(tabla) {
     total++;
   });
 
+  // Promoción de categoría vigente (la guarda reconstruirActivos_): para las
+  // ventas de SKUs de esa categoría sin killer. Solo si hay alguna.
+  var promoCat = {};
+  try { promoCat = JSON.parse(prop_('KILLERS_PROMO_CAT', '{}')); } catch (e) { promoCat = {}; }
+  var catSku = {};
+  if (Object.keys(promoCat).length) {
+    try {
+      var pc = promosCategoria_();
+      leerDashboard_().forEach(function (d) {
+        var ck = categoriaDeSku_(pc, d.sku, d.shelf);
+        if (ck && promoCat[ck]) { catSku[d.sku] = ck; catSku[skuBase_(d.sku)] = catSku[skuBase_(d.sku)] || ck; }
+      });
+    } catch (e) {
+      logWarn_('PRECIOS', 'No se pudo leer el dashboard para la promoción de categoría', { error: String(e && e.message || e) });
+    }
+  }
+
   if (!total && tabla && tabla.killersNQ) {
     tabla.killersNQ.forEach(function (k) {
       var e = { precio: k.precio, ini: '', fin: '', com: '', normal: '', comMsi: '', normalMsi: '', nCarga: 0 };
@@ -831,7 +1037,40 @@ function killersParaValidar_(tabla) {
       total++;
     });
   }
-  return { mapa: mapa, total: total };
+  return { mapa: mapa, total: total, promoCat: promoCat, catSku: catSku, extra: extra };
+}
+
+/** Categoría con promoción de un SKU (clave) o null. */
+function catPromoDeSku_(killers, sku, grupo) {
+  if (!killers.catSku) return null;
+  var ll = llavesSku_(sku, grupo);
+  for (var i = 0; i < ll.length; i++) if (killers.catSku[ll[i]]) return killers.catSku[ll[i]];
+  return null;
+}
+
+/** ¿La promoción de la categoría de este SKU ya viene aplicada en el site? */
+function promoYaEnSite_(killers, sku, grupo) {
+  var ck = catPromoDeSku_(killers, sku, grupo);
+  return !!(ck && killers.promoCat[ck] && killers.promoCat[ck].enSite !== false);
+}
+
+/**
+ * Promoción de categoría para una venta: {com, normal} o null. Premium usa el
+ * par MSI. Si ya está aplicada en el site, null: el mínimo ya viene rebajado.
+ */
+function promoCategoriaDe_(killers, sku, grupo, premium) {
+  if (!killers.promoCat) return null;
+  var ll = llavesSku_(sku, grupo);
+  for (var i = 0; i < ll.length; i++) {
+    var ck = killers.catSku[ll[i]];
+    var p = ck && killers.promoCat[ck];
+    if (!p) continue;
+    if (p.enSite !== false) return null;
+    var extra = killers.extra || MSI_EXTRA_DEF;
+    return premium ? { normal: p.normal + extra, com: p.normal + extra - p.red, nombre: p.nombre }
+                   : { normal: p.normal, com: p.normal - p.red, nombre: p.nombre };
+  }
+  return null;
 }
 
 /** ¿La fecha de la venta cae dentro del rango? Un día de colchón a cada lado. */
