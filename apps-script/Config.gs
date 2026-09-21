@@ -42,6 +42,7 @@ var CFG = {
     K_ACT:    'KILLERS ACTIVOS',                // killers vigentes (lo genera el script)
     K_HIST:   'KILLERS HISTORICO',              // todos los killers, por mes
     K_COM:    'COMISIONES',                     // comisión normal por categoría
+    K_PROMO:  'PROMOCIONES',                    // promociones deducidas (para el site)
     LOG:      'LOG Ventas',                     // bitácora del script
     ASIGNADOS:'SKU ASIGNADOS'                   // SKUs vinculados a otro SKU
   },
@@ -114,25 +115,23 @@ var ENC_VENTAS = [
 ];
 
 /**
- * WALMART: A–L ventas · M Precio referencia (como antes) · N–U análisis.
- * M ahora es un VALOR (el mínimo al momento de la venta), no una fórmula.
+ * WALMART: A–L ventas + M "Precio referencia", igual que el código anterior.
+ * NO se agregan columnas. M = el mínimo que aplicó al momento de la venta.
  */
-var ENC_WALMART = ENC_VENTAS.concat([
-  'Precio referencia',   // M  mínimo EM que aplicó
-  'SKU base',            // N
-  'Publicación',         // O  CLASICA / PREMIUM / OPEN BOX
-  'Origen',              // P  EM / CVA
-  'Referencia usada',    // Q  MINIMO / CUPON / —
-  'Diferencia $',        // R  J − M
-  'Diferencia %',        // S
-  'Semáforo',            // T  OK / BAJO MINIMO / CUPON / PENDIENTE / SIN REFERENCIA / CVA / IGNORADO / INTERNA
-  'Notas'                // U
-]);
-var W = { REF: 12, BASE: 13, PUB: 14, ORIGEN: 15, REFUSADA: 16,
-          DIF: 17, PCT: 18, SEM: 19, NOTAS: 20 };   // índices 0-based
-var N_COLS_WALMART = 21;
+var ENC_WALMART = ENC_VENTAS.concat(['Precio referencia']);
+var N_COLS_WALMART = 13;
 
-/* El histórico de alertas se escribe por encabezado: ver CAMPOS_ALERTA en Alertas.gs */
+/*
+ * Resultado interno de evaluarVentaWalmart_ (NO se escribe en la hoja, solo
+ * decide si va al histórico): A–L + [ref, base, pub, origen, refUsada, dif,
+ * pct, semáforo, notas]. Índices 0-based.
+ */
+var W = { REF: 12, BASE: 13, PUB: 14, ORIGEN: 15, REFUSADA: 16,
+          DIF: 17, PCT: 18, SEM: 19, NOTAS: 20 };
+
+/** Histórico de alertas: A–I tal cual está la hoja. NO se agregan columnas. */
+var ENC_ALERTAS = ['VEnta diaria Odoo', 'SO', 'Cliente', 'Vendedor', 'SKU',
+                   'Cantidad', 'VENTA', 'ERIK', 'DIFERENCIA'];
 
 var ENC_LOG = ['Hora', 'Emoji', 'Nivel', 'Etapa', 'Mensaje', 'Detalles (JSON)'];
 

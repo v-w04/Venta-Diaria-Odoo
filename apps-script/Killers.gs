@@ -343,8 +343,9 @@ function nuevaCarga_() {
 // ── Botón: procesar lo pegado ─────────────────────────────────────────────
 
 function procesarKillers() {
-  var lock = candado_(30000);
-  if (!lock) { avisar_('Hay otra corrida en curso. Intenta en un minuto.'); return; }
+  // Botón: espera hasta 3 min a que termine el trigger que esté corriendo.
+  var lock = candado_(180000);
+  if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nNo pasa nada: espera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
   try {
     var r = procesarKillers_();
     if (!r.leidos) {

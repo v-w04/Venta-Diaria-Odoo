@@ -29,8 +29,9 @@ function importarVentasAuto() {
 
 /** Menú: importar a mano. */
 function importarVentasAhora() {
-  var lock = candado_(30000);
-  if (!lock) { avisar_('Hay otra corrida en curso. Intenta en un minuto.'); return; }
+  // Botón: espera hasta 3 min a que termine el trigger que esté corriendo.
+  var lock = candado_(180000);
+  if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nNo pasa nada: espera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
   try {
     var r = importarVentas_();
     avisar_(
@@ -51,6 +52,7 @@ function importarVentasAhora() {
 
 function importarVentas_() {
   migrarOrdenesUnaVez_();
+  repararFormatosUnaVez_();
 
   var t0 = Date.now();
   var llamadas0 = llamadasDeHoy_();

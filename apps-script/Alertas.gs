@@ -1,18 +1,18 @@
 /**
  * VENTA DIARIA ODOO 2026 — Ventas de Walmart y su histórico de alertas
  *
- * NO manda correos. Ninguno. Todo queda escrito para consulta:
- *   · WALMART              cada venta con su análisis en M–U
- *   · Histórico de alertas se acumula y nunca se borra
+ * NO manda correos. Ninguno. Todo queda escrito para consulta.
+ *
+ * Formatos: los MISMOS de siempre. No se agregan columnas.
+ *   · WALMART              A–L venta · M Precio referencia (el mínimo que aplicó)
+ *   · Histórico de alertas A Fecha alerta · B SO · C Cliente · D Vendedor ·
+ *                          E SKU · F Cantidad · G VENTA · H ERIK · I DIFERENCIA
  *
  * Regla: alerta cuando J (precio unitario) queda por debajo del mínimo de
  * PRECIOS ERIK, salvo que:
  *   · había un killer de ese SKU a ese precio en la fecha de la venta
  *     (KILLERS HISTORICO + KILLERS KAM), o
- *   · había promoción (comisión menor que la normal) y el precio alcanza el
- *     mínimo ajustado por esa comisión.
- *
- * EM y CVA se revisan igual, cada uno contra el mínimo de su master.
+ *   · había promoción de comisión y el precio alcanza el mínimo ajustado.
  * Nunca alertan: prefijos RES-/WL-/OB- · ventas internas, insumos y
  * pruebas · SKUs sin precio en PRECIOS ERIK.
  */
@@ -29,131 +29,52 @@ function contextoPrecios_() {
 }
 
 /**
- * Filas A–L de Walmart recién bajadas → WALMART (A–U) y, si quedaron bajo
+ * Filas A–L de Walmart recién bajadas → WALMART (A–M) y, si quedaron bajo
  * mínimo, al histórico. Devuelve { escritas, alertas }.
  */
 function procesarWalmart_(filasWm) {
+  repararFormatosUnaVez_();
   var ctx = contextoPrecios_();
-  var completas = filasWm.map(function (f) {
-    return f.slice(0, 12).concat(evaluarVentaWalmart_(f, ctx.tabla, ctx.killers, ctx.listaCaida, ctx.asignados));
+  var completas = {};
+  var aEscribir = filasWm.map(function (f) {
+    var c = f.slice(0, 12).concat(evaluarVentaWalmart_(f, ctx.tabla, ctx.killers, ctx.listaCaida, ctx.asignados));
+    completas[String(Number(c[0]) || c[0])] = c;
+    return c.slice(0, N_COLS_WALMART);                 // A–M, nada más
   });
 
-  var escritas = agregarSinDuplicar_(CFG.H.WALMART, ENC_WALMART, completas);
-  var alertas = escritas.filter(function (f) { return f[W.SEM] === 'BAJO MINIMO'; });
+  var escritas = agregarSinDuplicar_(CFG.H.WALMART, ENC_WALMART, aEscribir);
+  var alertas = escritas
+    .map(function (f) { return completas[String(Number(f[0]) || f[0])]; })
+    .filter(function (c) { return c && c[W.SEM] === 'BAJO MINIMO'; });
   var n = registrarAlertas_(alertas);
 
   return { escritas: escritas.length, alertas: n };
 }
 
-/**
- * Re-evalúa en la hoja WALMART las filas marcadas PENDIENTE (y, si se pide,
- * las recientes sin analizar). Escribe M–U en una sola pasada.
- */
-function revisarPendientesWalmart_(incluirSinAnalizar) {
-  var out = { revisadas: 0, alertas: 0 };
-  var sh = hoja_(CFG.H.WALMART, ENC_WALMART);   // asegura columnas M–U
-  var n = sh.getLastRow();
-  if (n < 2) return out;
-
-  // Solo las últimas 3,000 ventas: un PENDIENTE se resuelve en minutos, no
-  // hace falta leer toda la hoja cada 10 min.
-  var ancho = Math.max(Math.min(sh.getMaxColumns(), N_COLS_WALMART), 12);
-  var desdeFila = Math.max(2, n - 2999);
-  var datos = sh.getRange(desdeFila, 1, n - desdeFila + 1, ancho).getValues();
-  var limite = Date.now() - CFG.DIAS_VENTANA * 86400000;
-
-  var aRevisar = [];
-  for (var i = 0; i < datos.length; i++) {
-    var sem = String(datos[i][W.SEM] || '');
-    if (sem === 'PENDIENTE') { aRevisar.push(i); continue; }
-    if (incluirSinAnalizar && !sem) {
-      var d = datos[i][2];
-      var t = (d instanceof Date) ? d.getTime() : Date.parse(d);
-      if (t && t >= limite) aRevisar.push(i);
-    }
-  }
-  if (!aRevisar.length) return out;
-
-  var ctx = contextoPrecios_();
-  var alertas = [];
-  aRevisar.forEach(function (i) {
-    var bloque = evaluarVentaWalmart_(datos[i], ctx.tabla, ctx.killers, ctx.listaCaida, ctx.asignados);
-    sh.getRange(i + desdeFila, W.REF + 1, 1, bloque.length).setValues([bloque]);
-    if (bloque[W.SEM - W.REF] === 'BAJO MINIMO') {
-      alertas.push(datos[i].slice(0, 12).concat(bloque));
-    }
-  });
-
-  out.revisadas = aRevisar.length;
-  out.alertas = registrarAlertas_(alertas);
-  return out;
+/** Ya no hay PENDIENTES (la lista de killers no depende de un IMPORTRANGE). */
+function revisarPendientesWalmart_() {
+  return { revisadas: 0, alertas: 0 };
 }
 
 /**
- * Escribe alertas en "Histórico de alertas".
- *
- * Esa hoja trae encabezados de dos generaciones del código anterior
- * (con y sin "Producto", "J: Precio" vs "Precio Unit."). Por eso aquí cada
- * dato se coloca en la columna cuyo ENCABEZADO le corresponde, no por letra.
- * Lo que no tenga columna se agrega a la derecha. Nada se mueve de lugar.
- *
+ * Escribe en "Histórico de alertas", columnas A–I fijas, como siempre.
  * No duplica: la llave es SO | SKU | precio, igual que antes.
  */
-var CAMPOS_ALERTA = [
-  { k: 'fecha',    nom: 'Fecha alerta',  alias: ['FECHA ALERTA', 'VENTA DIARIA ODOO', 'FECHA'] },
-  { k: 'so',       nom: 'SO',            alias: ['SO', 'NUMERO (SO)'] },
-  { k: 'cliente',  nom: 'Cliente',       alias: ['CLIENTE'] },
-  { k: 'vendedor', nom: 'Vendedor',      alias: ['VENDEDOR'] },
-  { k: 'sku',      nom: 'SKU',           alias: ['SKU'] },
-  { k: 'producto', nom: 'Producto',      alias: ['PRODUCTO'] },
-  { k: 'cantidad', nom: 'Cantidad',      alias: ['CANTIDAD'] },
-  { k: 'precio',   nom: 'J: Precio',     alias: ['J: PRECIO', 'PRECIO UNIT.', 'PRECIO UNIT', 'PRECIO UNITARIO', 'PRECIO VENTA', 'VENTA'] },
-  { k: 'minimo',   nom: 'N: Ref',        alias: ['N: REF', 'PRECIO MINIMO', 'PRECIO REFERENCIA', 'ERIK'] },
-  { k: 'dif',      nom: 'Diff (N-J)',    alias: ['DIFF (N-J)', 'DIFERENCIA'] },
-  { k: 'importe',  nom: 'Importe',       alias: ['IMPORTE', 'IMPORTE LINEA'] },
-  { k: 'total',    nom: 'Total',         alias: ['TOTAL', 'TOTAL ORDEN'] },
-  { k: 'pub',      nom: 'Publicación',   alias: ['PUBLICACION'] },
-  { k: 'origen',   nom: 'Origen',        alias: ['ORIGEN'] },
-  { k: 'fventa',   nom: 'Fecha venta',   alias: ['FECHA VENTA'] },
-  { k: 'id',       nom: 'ID Línea',      alias: ['ID LINEA'] }
-];
-
 function registrarAlertas_(filas) {
   if (!filas || !filas.length) return 0;
+  repararFormatosUnaVez_();
 
-  var ss = libro_();
-  var sh = ss.getSheetByName(CFG.H.ALERTAS);
-  if (!sh) sh = hoja_(CFG.H.ALERTAS, CAMPOS_ALERTA.map(function (c) { return c.nom; }));
-
-  // Ubicar cada campo por su encabezado; los que falten, a la derecha.
-  var ultCol = Math.max(sh.getLastColumn(), 1);
-  var enc = sh.getRange(1, 1, 1, ultCol).getValues()[0];
-  if (enc.length === 1 && (enc[0] === '' || enc[0] === null)) enc = [];
-  var mapa = mapaColumnas_(enc);
-  var pos = {}, agregar = [];
-  CAMPOS_ALERTA.forEach(function (c) {
-    for (var i = 0; i < c.alias.length; i++) {
-      if (mapa[c.alias[i]] !== undefined) { pos[c.k] = mapa[c.alias[i]]; return; }
-    }
-    agregar.push(c);
-  });
-  if (agregar.length) {
-    var desde = enc.length;
-    if (sh.getMaxColumns() < desde + agregar.length) {
-      sh.insertColumnsAfter(sh.getMaxColumns(), desde + agregar.length - sh.getMaxColumns());
-    }
-    sh.getRange(1, desde + 1, 1, agregar.length)
-      .setValues([agregar.map(function (c) { return c.nom; })]);
-    agregar.forEach(function (c, j) { pos[c.k] = desde + j; });
+  var sh = libro_().getSheetByName(CFG.H.ALERTAS);
+  if (!sh) {
+    sh = libro_().insertSheet(CFG.H.ALERTAS);
+    sh.getRange(1, 1, 1, ENC_ALERTAS.length).setValues([ENC_ALERTAS]);
   }
-  var ancho = enc.length + agregar.length;
 
-  // Llaves existentes
   var claves = {};
-  var n = sh.getLastRow();
+  var n = ultimaFilaColA_(sh);
   if (n > 1) {
-    sh.getRange(2, 1, n - 1, ancho).getValues().forEach(function (r) {
-      claves[String(r[pos.so]) + '|' + sku_(r[pos.sku]) + '|' + num_(r[pos.precio])] = true;
+    sh.getRange(2, 1, n - 1, 9).getValues().forEach(function (r) {
+      claves[String(r[1]) + '|' + sku_(r[4]) + '|' + num_(r[6])] = true;
     });
   }
 
@@ -163,24 +84,75 @@ function registrarAlertas_(filas) {
     var k = String(f[1]) + '|' + sku_(f[6]) + '|' + num_(f[9]);
     if (claves[k]) return;
     claves[k] = true;
-    var min = num_(f[W.REF]);
-    var v = {
-      fecha: ahora, so: f[1], cliente: f[3], vendedor: f[4], sku: f[6],
-      producto: f[7], cantidad: f[8], precio: num_(f[9]), minimo: min,
-      dif: min - num_(f[9]), importe: num_(f[10]), total: num_(f[11]),
-      pub: f[W.PUB], origen: 'WALMART-' + f[W.ORIGEN], fventa: f[2], id: f[0]
-    };
-    var fila = new Array(ancho).fill('');
-    Object.keys(pos).forEach(function (key) { fila[pos[key]] = v[key]; });
-    nuevas.push(fila);
+    var min = num_(f[W.REF]), J = num_(f[9]);
+    nuevas.push([ahora, f[1], f[3], f[4], f[6], f[8], J, min, min - J]);
   });
 
   if (nuevas.length) {
     agregarFilas_(sh, nuevas);
     logWarn_('ALERTAS', nuevas.length + ' venta(s) de Walmart por debajo del mínimo',
-             { skus: nuevas.slice(0, 10).map(function (a) { return a[pos.sku]; }) });
+             { skus: nuevas.slice(0, 10).map(function (a) { return a[4]; }) });
   }
   return nuevas.length;
+}
+
+/**
+ * UNA vez: deja WALMART e Histórico de alertas como estaban.
+ *  · Histórico: versiones anteriores de este código agregaron columnas a la
+ *    derecha (Fecha alerta, Producto, J: Precio, N: Ref, Importe, Total,
+ *    Publicación, Origen, Fecha venta, ID Línea) y una alerta quedó repartida.
+ *    Se regresa a A–I y se borran esas columnas.
+ *  · WALMART: se borran las columnas N–U que agregó el código nuevo
+ *    (SKU base … Notas). A–M quedan intactas.
+ * Solo borra columnas cuyo encabezado es uno de los que puso este código.
+ */
+var ENC_AGREGADOS_ALERTAS = ['FECHA ALERTA', 'PRODUCTO', 'J: PRECIO', 'N: REF', 'IMPORTE',
+                             'TOTAL', 'PUBLICACION', 'ORIGEN', 'FECHA VENTA', 'ID LINEA', 'DIFF (N-J)'];
+var ENC_AGREGADOS_WALMART = ['SKU BASE', 'PUBLICACION', 'ORIGEN', 'REFERENCIA USADA',
+                             'DIFERENCIA $', 'DIFERENCIA %', 'SEMAFORO', 'NOTAS'];
+
+function repararFormatosUnaVez_() {
+  if (prop_('FORMATOS_REPARADOS') === '1') return;
+  var ss = libro_();
+
+  // ── Histórico de alertas ──
+  var al = ss.getSheetByName(CFG.H.ALERTAS);
+  if (al && al.getLastColumn() > 9) {
+    var nc = al.getLastColumn(), n = al.getLastRow();
+    var enc = al.getRange(1, 1, 1, nc).getValues()[0].map(norm_);
+    var col = function (nombre) { var i = enc.indexOf(nombre); return i > 8 ? i : -1; };
+    var cFecha = col('FECHA ALERTA'), cPrecio = col('J: PRECIO'), cRef = col('N: REF');
+    if (n > 1) {
+      var datos = al.getRange(2, 1, n - 1, nc).getValues();
+      var cambio = false;
+      datos.forEach(function (r) {
+        if ((r[0] === '' || r[0] === null) && cFecha >= 0 && r[cFecha] !== '') {
+          r[0] = r[cFecha];
+          if (cPrecio >= 0 && r[6] === '') r[6] = r[cPrecio];
+          if (cRef >= 0 && r[7] === '') r[7] = r[cRef];
+          if (r[8] === '' && num_(r[7]) && num_(r[6])) r[8] = num_(r[7]) - num_(r[6]);
+          cambio = true;
+        }
+      });
+      if (cambio) al.getRange(2, 1, datos.length, 9).setValues(datos.map(function (r) { return r.slice(0, 9); }));
+    }
+    for (var c = nc - 1; c >= 9; c--) {
+      if (ENC_AGREGADOS_ALERTAS.indexOf(enc[c]) >= 0) al.deleteColumn(c + 1);
+    }
+  }
+
+  // ── WALMART ──
+  var wm = ss.getSheetByName(CFG.H.WALMART);
+  if (wm && wm.getLastColumn() > N_COLS_WALMART) {
+    var ncw = wm.getLastColumn();
+    var encw = wm.getRange(1, 1, 1, ncw).getValues()[0].map(norm_);
+    for (var d = ncw - 1; d >= N_COLS_WALMART; d--) {
+      if (ENC_AGREGADOS_WALMART.indexOf(encw[d]) >= 0) wm.deleteColumn(d + 1);
+    }
+  }
+
+  setProp_('FORMATOS_REPARADOS', '1');
+  logOK_('FORMATO', 'WALMART e Histórico de alertas regresados a su formato original');
 }
 
 /** Resumen rápido para consultar sin abrir las hojas. */
@@ -188,18 +160,12 @@ function resumenWalmart() {
   var sh = libro_().getSheetByName(CFG.H.WALMART);
   if (!sh || sh.getLastRow() < 2) { avisar_('Todavía no hay ventas de Walmart.'); return; }
 
-  var n = sh.getLastRow();
-  var ancho = Math.max(Math.min(sh.getMaxColumns(), N_COLS_WALMART), 12);
-  var datos = sh.getRange(2, 1, n - 1, ancho).getValues();
-  var c = { OK: 0, 'BAJO MINIMO': 0, KILLER: 0, PROMOCION: 0, CUPON: 0, PENDIENTE: 0, 'SIN REFERENCIA': 0, otros: 0, sin: 0 };
-  var importe = 0, perdida = 0;
+  var n = ultimaFilaColA_(sh);
+  var datos = sh.getRange(2, 1, n - 1, N_COLS_WALMART).getValues();
+  var importe = 0, sinRef = 0;
   datos.forEach(function (f) {
     importe += num_(f[10]);
-    var s = String(f[W.SEM] || '');
-    if (!s) c.sin++;
-    else if (c[s] !== undefined) c[s]++;
-    else c.otros++;
-    if (s === 'BAJO MINIMO') perdida += Math.abs(num_(f[W.DIF])) * num_(f[8]);
+    if (!num_(f[12])) sinRef++;
   });
 
   var al = libro_().getSheetByName(CFG.H.ALERTAS);
@@ -207,16 +173,9 @@ function resumenWalmart() {
   avisar_(
     'WALMART — resumen\n\n' +
     'Ventas: ' + datos.length + '\n' +
-    '  En precio: ' + c.OK + '\n' +
-    '  Con killer: ' + (c.KILLER + c.CUPON) + '\n' +
-    '  Con promoción: ' + c.PROMOCION + '\n' +
-    '  Bajo mínimo: ' + c['BAJO MINIMO'] + '\n' +
-    '  Pendientes: ' + c.PENDIENTE + '\n' +
-    '  Sin precio en PRECIOS ERIK: ' + c['SIN REFERENCIA'] + '\n' +
-    '  Anteriores al cambio (sin análisis): ' + c.sin + '\n\n' +
     'Importe total: $' + Math.round(importe).toLocaleString('es-MX') + '\n' +
-    'Diferencia acumulada bajo mínimo: $' + Math.round(perdida).toLocaleString('es-MX') + '\n\n' +
-    'Histórico de alertas: ' + (al ? Math.max(0, al.getLastRow() - 1) : 0) + ' registros\n' +
+    'Sin precio en PRECIOS ERIK: ' + sinRef + '\n\n' +
+    'Histórico de alertas: ' + (al ? Math.max(0, ultimaFilaColA_(al) - 1) : 0) + ' registros\n' +
     'Celdas del libro: ' + cel.total.toLocaleString('es-MX') + ' / 10,000,000\n' +
     'Llamadas a Odoo hoy: ' + llamadasDeHoy_()
   );

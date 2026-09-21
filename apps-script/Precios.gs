@@ -199,7 +199,9 @@ function tablaPrecios_() {
 function minimoDe_(tabla, sku) {
   var s = sku_(sku);
   var fila = tabla.minimos[s] || tabla.minimos[skuSinVariante_(s)];
-  if (!fila && !esCVA_(s)) fila = tabla.minimos[skuBase_(s)];
+  // Open box (-OB) nunca toma el mínimo del producto nuevo: si no tiene el
+  // suyo propio en PRECIOS ERIK, queda SIN REFERENCIA en vez de alertar.
+  if (!fila && !esCVA_(s) && tipoPublicacion_(s) !== 'OPEN BOX') fila = tabla.minimos[skuBase_(s)];
   if (!fila) return 0;
   return tipoPublicacion_(s) === 'PREMIUM' ? (fila.p || 0) : (fila.c || 0);
 }
@@ -299,8 +301,9 @@ function grupoDe_(asignados, sku) {
 
 /** Menú: fuerza la bajada de mínimos desde Site Sheet. */
 function actualizarPreciosMinimos() {
-  var lock = candado_(30000);
-  if (!lock) { avisar_('Hay otra corrida en curso. Intenta en un minuto.'); return; }
+  // Botón: espera hasta 3 min a que termine el trigger que esté corriendo.
+  var lock = candado_(180000);
+  if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nNo pasa nada: espera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
   try {
     var r = actualizarPreciosErik_(true);
     setProp_('HUELLA_PRECIOS', huellaSiteSheet_());

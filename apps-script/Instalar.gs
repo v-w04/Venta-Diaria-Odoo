@@ -50,7 +50,7 @@ function crearHojas(silencioso) {
   hoja_(CFG.H.LOG,     ENC_LOG);
   hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
   if (!libro_().getSheetByName(CFG.H.ALERTAS)) {
-    hoja_(CFG.H.ALERTAS, CAMPOS_ALERTA.map(function (c) { return c.nom; }));
+    hoja_(CFG.H.ALERTAS, ENC_ALERTAS);
   }
   if (!libro_().getSheetByName(CFG.H.PRECIOS)) hoja_(CFG.H.PRECIOS, null);
   if (!silencioso) avisar_('Listo. Hojas del sistema:\n\n' + hojasProtegidas_().join('\n'));
