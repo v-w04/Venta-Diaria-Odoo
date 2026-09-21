@@ -5,7 +5,7 @@
  *  1. El tag de struct es <name>, NUNCA <n>. Odoo responde
  *     "TypeError: unhashable type: 'list'" si se abrevia.
  *  2. Odoo 18 puede no tener módulos que la documentación da por hechos.
- *     Por eso los campos se verifican contra ir.model.fields en vez de
+ *     Por eso los campos se verifican con fields_get del modelo en vez de
  *     hardcodearse.
  *
  * Cada llamada a Odoo es un UrlFetchApp.fetch y se cobra a la cuota de
@@ -174,23 +174,36 @@ function odooEjecutar_(modelo, metodo, args, kwargs) {
 
 /**
  * Campos que EXISTEN de verdad en un modelo de esta instancia.
- * Se cachea en Script Properties porque no cambia casi nunca.
+ *
+ * Usa fields_get del propio modelo: lo puede leer cualquier usuario.
+ * (ir.model.fields NO: pide el grupo "Access Rights", y el usuario de la
+ * integración no lo tiene.) Si aun así falla, se usan los candidatos tal
+ * cual — son los mismos campos que el código anterior leía sin problema.
+ * Se cachea en Script Properties porque casi nunca cambia.
  */
 function odooCamposExistentes_(modelo, candidatos) {
   var k = 'CAMPOS_' + modelo.replace(/\./g, '_');
   var guardado = prop_(k);
-  var todos;
+  var todos = null;
   if (guardado) {
-    todos = JSON.parse(guardado);
-  } else {
-    var filas = odooEjecutar_('ir.model.fields', 'search_read',
-      [[['model', '=', modelo]]], { fields: ['name'], limit: 2000 });
-    todos = filas.map(function (f) { return f.name; });
-    setProp_(k, JSON.stringify(todos));
+    try { todos = JSON.parse(guardado); } catch (e) { todos = null; }
   }
+  if (!todos) {
+    try {
+      var info = odooEjecutar_(modelo, 'fields_get', [], { attributes: ['type'] });
+      todos = Object.keys(info || {});
+      if (todos.length) setProp_(k, JSON.stringify(todos));
+    } catch (e) {
+      logWarn_('ODOO', 'No se pudo consultar los campos de ' + modelo +
+               '; se usan los de siempre', { error: String(e && e.message || e) });
+      return candidatos;
+    }
+  }
+  if (!todos || !todos.length) return candidatos;
   var set = {};
   for (var i = 0; i < todos.length; i++) set[todos[i]] = true;
-  return candidatos.filter(function (c) { return !!set[c]; });
+  var ok = candidatos.filter(function (c) { return !!set[c]; });
+  return ok.length ? ok : candidatos;
 }
 
 /**
