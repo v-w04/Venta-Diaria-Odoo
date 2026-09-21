@@ -360,8 +360,9 @@ function procesarKillers() {
       'KILLERS ACTIVOS: ' + r.activos + '  ·  con promoción: ' + r.promos +
       '  ·  por iniciar: ' + r.porIniciar + '\n' +
       'Salieron de ACTIVOS (ya no vienen en el seller center o vencieron): ' + r.salieron +
-      (r.sinCategoria ? '\n\n⚠️ ' + r.sinCategoria + ' sin CATEGORIA: ponla en KILLERS ACTIVOS ' +
-                        'para detectar promociones.' : ''));
+      '\nPROMOCIONES: ' + (r.promociones || 0) + ' SKU(s) con comisión rebajada (deducida de las comisiones del pegado)' +
+      (r.sinCategoria ? '\n\nℹ️ ' + r.sinCategoria + ' sin categoría en la columna T de ACTIVOS. No es obligatoria: ' +
+                        'la promoción se deduce igual. Ponla solo si quieres el nombre de categoría exacto en PROMOCIONES.' : ''));
   } catch (e) {
     logError_('KILLERS', e);
     avisar_('No se pudieron procesar los killers:\n\n' + e);
@@ -393,6 +394,7 @@ function procesarKillers_() {
   var a = reconstruirActivos_();
   res.activos = a.total; res.promos = a.promos; res.porIniciar = a.porIniciar;
   res.sinCategoria = a.sinCategoria;
+  res.promociones = a.promociones;
   res.salieron = Math.max(0, antes - a.total + a.entraron);
 
   sh.clearContents();
