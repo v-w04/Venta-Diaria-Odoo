@@ -233,7 +233,13 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
     return ['', base, tipo, origen, '—', '', '', 'IGNORADO', 'Prefijo viejo RES- / WL- / OB-'];
   }
 
-  var min = minimoDe_(tabla, refSku) || minimoDe_(tabla, s);
+  // Con SKUs asignados da igual cuál pusiste en A: el mínimo es el más bajo
+  // del grupo (el SKU vendido se está surtiendo como cualquiera de ellos).
+  var min = 0;
+  [s, refSku].concat(grupo || []).forEach(function (x) {
+    var m = minimoDe_(tabla, x);
+    if (m > 0 && (!min || m < min)) min = m;
+  });
   if (!min) {
     return ['', base, tipo, origen, '—', '', '', 'SIN REFERENCIA',
             'No está en PRECIOS ERIK' + (tipo === 'PREMIUM' ? ' (columna PREMIUM)' : '')];

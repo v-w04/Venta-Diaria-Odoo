@@ -327,17 +327,50 @@ function leerDashboard_() {
   return out;
 }
 
+/**
+ * Stock de Odoo por SKU general, de Site Sheet (columna "Stock Odoo" de las
+ * hojas de mínimos EM y CVA). Es el mismo TOTAL que usaba tu fórmula de
+ * Concentrado. El stockTotal del dashboard es el inventario que Walmart
+ * reporta y muchas veces viene en 0 aunque haya mercancía en Odoo.
+ */
+function stockOdoo_() {
+  if (stockOdoo_.cache) return stockOdoo_.cache;
+  var out = {};
+  var ss = SpreadsheetApp.openById(CFG.SITE_SHEET_ID);
+  CFG.SITE_HOJAS_MINIMO.forEach(function (nombre) {
+    var sh = ss.getSheetByName(nombre);
+    if (!sh || sh.getLastRow() < 2) return;
+    var nc = sh.getLastColumn();
+    var m = mapaColumnas_(sh.getRange(1, 1, 1, nc).getValues()[0]);
+    var iSku = m['SKU'], iSt = m['STOCK ODOO'];
+    if (iSku === undefined || iSt === undefined) return;
+    var a = Math.min(iSku, iSt), b = Math.max(iSku, iSt);
+    sh.getRange(2, a + 1, sh.getLastRow() - 1, b - a + 1).getValues().forEach(function (r) {
+      var k = sku_(r[iSku - a]);
+      if (k && out[k] === undefined) out[k] = num_(r[iSt - a]);
+    });
+  });
+  stockOdoo_.cache = out;
+  return out;
+}
+
 function skusPromoCategoria_(pc) {
   var conPromo = Object.keys(pc.cats).filter(function (c) { return pc.cats[c].red > 0; });
   if (!conPromo.length) return [];
+  var st = {};
+  try { st = stockOdoo_(); }
+  catch (e) { logWarn_('KILLERS', 'No se pudo leer el stock de Odoo de Site Sheet; se usa el del dashboard', { error: String(e && e.message || e) }); }
   var out = [];
   leerDashboard_().forEach(function (d) {
     var s = d.sku;
     if (skuIgnorado_(s) || /-(OB|OPENBOX)$/.test(s)) return;
     var cat = categoriaDeSku_(pc, s, d.shelf);
     if (!cat || !(pc.cats[cat].red > 0)) return;
-    if (!(d.tot >= 4 || d.wfs > 0)) return;
-    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: d.tot, depto: d.shelf });
+    // Tu regla: TOTAL (Odoo) ≥ 4, o si no, que haya algo en WFS
+    var tot = st[s] !== undefined ? st[s] : (st[skuSinVariante_(s)] !== undefined ? st[skuSinVariante_(s)] :
+              (st[skuBase_(s)] !== undefined ? st[skuBase_(s)] : d.tot));
+    if (!(tot >= 4 || d.wfs > 0)) return;
+    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: tot, depto: d.shelf });
   });
   return out;
 }
