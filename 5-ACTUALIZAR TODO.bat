@@ -114,22 +114,30 @@ if not exist ".git\" (
   "!GIT!" init >nul 2>&1
   echo          repositorio creado
 )
-if exist ".git\index.lock" del /f /q ".git\index.lock" >nul 2>&1
+del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
+del /f /q ".git\objects\maintenance.lock" >nul 2>&1
+del /f /q ".git\refs\heads\*.lock" >nul 2>&1
 "!GIT!" add -A >nul 2>&1
 "!GIT!" status --porcelain > "%TEMP%\vdo_st.txt" 2>nul
 set "HAYCAMBIOS="
 for %%A in ("%TEMP%\vdo_st.txt") do if %%~zA gtr 0 set "HAYCAMBIOS=1"
 del "%TEMP%\vdo_st.txt" >nul 2>&1
+set PENDIENTES=0
+"!GIT!" rev-list --count @{u}..HEAD > "%TEMP%\vdo_p.txt" 2>nul
+if exist "%TEMP%\vdo_p.txt" set /p PENDIENTES=<"%TEMP%\vdo_p.txt"
+del "%TEMP%\vdo_p.txt" >nul 2>&1
+if not defined PENDIENTES set PENDIENTES=0
 if not defined HAYCAMBIOS (
-  echo          sin cambios que guardar
-  goto CIERRE
+  if "!PENDIENTES!"=="0" (
+    echo          sin cambios que guardar
+    goto CIERRE
+  )
+  "!GIT!" push -q
+  if errorlevel 1 goto FALLOPUSHGIT
+  goto VERIFICA
 )
-"!GIT!" commit -m "Actualizacion Venta Diaria Odoo" >nul 2>&1
-if errorlevel 1 (
-  echo          no se pudo hacer el commit: git no tiene nombre y correo
-  echo          configurados en esta PC. El codigo en Apps Script no se afecta.
-  goto CIERRE
-)
+"!GIT!" commit -q -m "Actualizacion Venta Diaria Odoo"
+if errorlevel 1 goto COMMITFAIL
 "!GIT!" remote > "%TEMP%\vdo_rm.txt" 2>nul
 set "HAYREMOTO="
 for %%A in ("%TEMP%\vdo_rm.txt") do if %%~zA gtr 0 set "HAYREMOTO=1"
@@ -138,12 +146,28 @@ if not defined HAYREMOTO (
   echo          commit local, el repo no tiene GitHub conectado
   goto CIERRE
 )
-"!GIT!" push >nul 2>&1
-if errorlevel 1 (
-  echo          commit local, el push a GitHub fallo
-) else (
-  echo          ok  subido a GitHub
-)
+"!GIT!" push -q
+if errorlevel 1 goto FALLOPUSHGIT
+goto VERIFICA
+
+:VERIFICA
+set "RAMA="
+"!GIT!" rev-parse --abbrev-ref HEAD > "%TEMP%\vdo_b.txt" 2>nul
+if exist "%TEMP%\vdo_b.txt" set /p RAMA=<"%TEMP%\vdo_b.txt"
+del "%TEMP%\vdo_b.txt" >nul 2>&1
+if not defined RAMA goto NOCUADRA
+set "LOCAL="
+set "REMOTO="
+"!GIT!" rev-parse HEAD > "%TEMP%\vdo_l.txt" 2>nul
+if exist "%TEMP%\vdo_l.txt" set /p LOCAL=<"%TEMP%\vdo_l.txt"
+del "%TEMP%\vdo_l.txt" >nul 2>&1
+"!GIT!" ls-remote origin !RAMA! > "%TEMP%\vdo_r.txt" 2>nul
+if exist "%TEMP%\vdo_r.txt" set /p REMOTO=<"%TEMP%\vdo_r.txt"
+del "%TEMP%\vdo_r.txt" >nul 2>&1
+if not defined LOCAL goto NOCUADRA
+if not defined REMOTO goto NOCUADRA
+if /i not "!LOCAL:~0,10!"=="!REMOTO:~0,10!" goto NOCUADRA
+echo          subido y verificado
 
 :CIERRE
 echo.
@@ -250,6 +274,30 @@ if not "!RCX!"=="0" goto :eof
 findstr /I /C:"Skipping" /C:"rror" /C:"nvalid" /C:"unknown" /C:"already exists" "!OUTX!" >nul 2>&1 && goto :eof
 set "PUSHBIEN=1"
 goto :eof
+
+:COMMITFAIL
+echo.
+echo   %ROJO%x  NO SE PUDO HACER EL COMMIT%FIN%
+echo      git sin nombre y correo en esta PC: 0-CONFIGURAR.bat
+echo.
+pause
+exit /b 1
+
+:NOCUADRA
+echo.
+echo   %ROJO%x  NO PUDE CONFIRMAR QUE GITHUB QUEDO IGUAL%FIN%
+echo      Revisa el repo en GitHub antes de seguir.
+echo.
+pause
+exit /b 1
+
+:FALLOPUSHGIT
+echo.
+echo   %ROJO%x  EL COMMIT QUEDO LOCAL, GITHUB LO RECHAZO%FIN%
+echo      El codigo SI subio a Apps Script. Revisa git.
+echo.
+pause
+exit /b 1
 
 :LOGO
 REM --- Logo animado: solo en salidas exitosas, sin cls, sin pause despues ---

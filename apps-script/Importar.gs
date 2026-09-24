@@ -18,8 +18,18 @@ function importarVentasAuto() {
   if (!lock) { logWarn_('AUTO', 'Otra corrida en curso, se omite'); return; }
   try {
     var r = importarVentas_();
-    // Siempre deja rastro: así se ve en el LOG que el trigger sí corre.
-    logOK_('AUTO', (r.walmart || r.cva || r.pendientes) ? 'Importación terminada' : 'Sin ventas nuevas', r);
+    // Solo se escribe en el LOG cuando entró algo. Las corridas en vacío no
+    // dejan renglón, salvo la PRIMERA del día: ese "Trigger vivo" sirve para
+    // saber de un vistazo que el trigger sigue corriendo.
+    if (r.walmart || r.cva || r.pendientes) {
+      logOK_('AUTO', 'Importación terminada', r);
+    } else {
+      var hoy = hoy_();
+      if (prop_('LOG_LATIDO_DIA') !== hoy) {
+        setProp_('LOG_LATIDO_DIA', hoy);
+        logOK_('AUTO', 'Trigger vivo (sin ventas nuevas)', r);
+      }
+    }
   } catch (e) {
     logError_('AUTO', e);
   } finally {

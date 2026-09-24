@@ -99,8 +99,9 @@ var CFG = {
 
   // ── Retención (lo que evita volver al tope de 10M celdas) ───────────────
   RETENCION: {
-    WALMART: 400,  // días en WALMART (ventas más viejas se recortan)
-    LOG:    2000   // filas en LOG Ventas
+    WALMART: 400,   // días en WALMART (ventas más viejas se recortan)
+    LOG:     500,   // tope duro de filas en LOG Ventas
+    DIAS_LOG: 3     // el LOG se limpia una vez al día: solo deja estos días
   },
 
   LIMITE_CELDAS: 10000000,
