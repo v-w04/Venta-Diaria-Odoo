@@ -16,6 +16,8 @@ function onOpen() {
       .addItem('🎯 Procesar killers pegados', 'procesarKillers')
       .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')
       .addSeparator()
+      .addItem('📦 Revisar sobreventa (Walmart)', 'revisarSobreventa')
+      .addSeparator()
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')
       .addItem('🩺 Diagnóstico', 'diagnostico')
       .addItem('🧹 Limpiar hojas que no uso…', 'limpiarHojas')

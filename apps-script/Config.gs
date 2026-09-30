@@ -104,6 +104,22 @@ var CFG = {
     DIAS_LOG: 3     // el LOG se limpia una vez al día: solo deja estos días
   },
 
+  // ── Sobreventa (fusionado de "Sobreventa Odoo 2026") ────────────────────
+  // Pickings de Odoo en espera/confirmados (lo vendido que aún no se surte).
+  // Solo WALMART, en dos hojas. Los IDs son de stock.picking.type de ESTA
+  // instancia (los mismos de OPERACIONES_ACTIVAS del libro original):
+  //   3  = ElectronicsMexico: Pick
+  //   14 = Walmart WFS Electronics Mexico: Órdenes de entrega
+  // Si algún día cambian, el módulo avisa en el LOG con el nombre real.
+  SOBREVENTA: {
+    CONTACTO: 'WALMART',                 // se filtra SIEMPRE por este cliente
+    ESTADOS:  ['waiting', 'confirmed'],  // "en espera" / "confirmado" = sin surtir
+    DESTINOS: [
+      { hoja: 'Sobreventa WFS',  tipos: [14] },
+      { hoja: 'Sobreventa Pick', tipos: [3]  }
+    ]
+  },
+
   LIMITE_CELDAS: 10000000,
   AVISO_CELDAS:  9000000,
 
@@ -142,6 +158,14 @@ var ENC_LOG = ['Hora', 'Emoji', 'Nivel', 'Etapa', 'Mensaje', 'Detalles (JSON)'];
  *  B en adelante = los SKUs de Odoo vinculados a él. Puedes agregar columnas. */
 var ENC_ASIGNADOS = ['SKU PRINCIPAL', 'ASIGNADO 1', 'ASIGNADO 2', 'ASIGNADO 3',
                      'ASIGNADO 4', 'ASIGNADO 5'];
+
+/**
+ * Sobreventa WFS / Sobreventa Pick: mismas 12 columnas que el libro original
+ * "Sobreventa Odoo 2026". No se agregan columnas.
+ */
+var ENC_SOBREVENTA = ['Referencia', 'Desde', 'Hacia', 'Contacto', 'Fecha programada',
+                      'Documento origen', 'Estado', 'Tipo de operación', 'SKU',
+                      'Nombre producto', 'Qty demandada', 'Qty realizada'];
 
 
 /** Lee una propiedad del script. */

@@ -5,13 +5,16 @@
  *
  *   importarVentasAuto   cada 10 min → 144 corridas × 3-5 llamadas ≈ 600/día
  *   revisarPreciosAuto   cada 15 min →  96 corridas × 0 llamadas   =   0/día
+ *   sobreventaAuto       cada 30 min →  48 corridas × 3-4 llamadas ≈ 170/día
  *
  * revisarPreciosAuto no gasta UrlFetch: lee Site Sheet por la API de Sheets.
+ * sobreventaAuto reintenta una vez ante un 429 (rate limit) de Odoo.
  */
 
 var TRIGGERS = [
   { fn: 'importarVentasAuto', min: 10 },
-  { fn: 'revisarPreciosAuto', min: 15 }
+  { fn: 'revisarPreciosAuto', min: 15 },
+  { fn: 'sobreventaAuto',     min: 30 }
 ];
 
 /**
@@ -49,6 +52,9 @@ function crearHojas(silencioso) {
   hoja_(CFG.H.CVA,     ENC_VENTAS);
   hoja_(CFG.H.LOG,     ENC_LOG);
   hoja_(CFG.H.ASIGNADOS, ENC_ASIGNADOS);
+  CFG.SOBREVENTA.DESTINOS.forEach(function (d) {
+    if (!libro_().getSheetByName(d.hoja)) hoja_(d.hoja, ENC_SOBREVENTA);
+  });
   if (!libro_().getSheetByName(CFG.H.ALERTAS)) {
     hoja_(CFG.H.ALERTAS, ENC_ALERTAS);
   }
