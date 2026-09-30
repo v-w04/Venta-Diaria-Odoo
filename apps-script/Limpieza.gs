@@ -20,7 +20,10 @@
 
 /** Las únicas hojas que el proyecto necesita. Nunca se proponen para borrar. */
 function hojasProtegidas_() {
-  return Object.keys(CFG.H).map(function (k) { return CFG.H[k]; });
+  var hojas = Object.keys(CFG.H).map(function (k) { return CFG.H[k]; });
+  // Las hojas de sobreventa (WFS / Pick) también son del sistema.
+  CFG.SOBREVENTA.DESTINOS.forEach(function (d) { hojas.push(d.hoja); });
+  return hojas;
 }
 
 function limpiarHojas() {
