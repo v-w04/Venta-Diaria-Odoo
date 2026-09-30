@@ -3,9 +3,25 @@
  * Normalización de SKU, texto, fechas y acceso a hojas.
  */
 
-/** Abre el libro por ID. Nunca getActiveSpreadsheet: los triggers no lo tienen. */
+/**
+ * Abre el libro por ID. Nunca getActiveSpreadsheet: los triggers no lo tienen.
+ *
+ * Google tira de vez en cuando "Se agotó el tiempo de espera del servicio Hojas
+ * de cálculo al acceder al documento": es un timeout transitorio de Sheets, no
+ * del código. Se reintenta con pausas crecientes para que una corrida (o un
+ * trigger) no muera al primer tropiezo.
+ */
 function libro_() {
-  return SpreadsheetApp.openById(CFG.LIBRO_ID);
+  var ultimo;
+  for (var i = 0; i < 4; i++) {
+    try {
+      return SpreadsheetApp.openById(CFG.LIBRO_ID);
+    } catch (e) {
+      ultimo = e;
+      Utilities.sleep(1500 * (i + 1));   // 1.5s, 3s, 4.5s entre intentos
+    }
+  }
+  throw ultimo;
 }
 
 /**
