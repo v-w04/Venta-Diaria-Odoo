@@ -41,15 +41,38 @@ function revisarSobreventa() {
   }
 }
 
-/** Trigger: corre en silencio y solo deja renglón en el LOG si hubo algo. */
+/**
+ * Trigger: corre en silencio.
+ *
+ * El trigger corre cada 30 min (48 veces al día) y casi siempre encuentra lo
+ * MISMO. Escribir un renglón cada vez llenaba el LOG de basura, así que solo
+ * deja renglón cuando:
+ *   · la foto CAMBIÓ respecto a la corrida anterior (número de pickings o de
+ *     líneas por hoja), o
+ *   · es la primera corrida del día ("Trigger vivo"), para saber de un vistazo
+ *     que el trigger sigue vivo.
+ * Las hojas SIEMPRE se actualizan; lo que se calla es el LOG.
+ */
 function sobreventaAuto() {
   var lock = candado_(60 * 1000);
   if (!lock) return;                 // ya hay otra corrida; no encimar llamadas
   try {
     var r = sobreventa_();
-    // Solo deja renglón si HAY sobreventa; si no, corre en silencio.
-    if (r.pickings) {
-      logOK_('SOBREVENTA', 'Sobreventa Walmart', { pickings: r.pickings, porHoja: r.porHoja });
+    var datos = { pickings: r.pickings, porHoja: r.porHoja };
+
+    // Huella de la corrida: "49|Sobreventa WFS=49;Sobreventa Pick=0"
+    var huella = r.pickings + '|' + CFG.SOBREVENTA.DESTINOS.map(function (d) {
+      return d.hoja + '=' + (r.porHoja[d.hoja] || 0);
+    }).join(';');
+
+    var hoy = hoy_();
+    if (huella !== prop_('SOBREVENTA_HUELLA')) {
+      setProp_('SOBREVENTA_HUELLA', huella);
+      setProp_('SOBREVENTA_LATIDO_DIA', hoy);
+      logOK_('SOBREVENTA', 'Sobreventa Walmart (cambió)', datos);
+    } else if (prop_('SOBREVENTA_LATIDO_DIA') !== hoy) {
+      setProp_('SOBREVENTA_LATIDO_DIA', hoy);
+      logOK_('SOBREVENTA', 'Trigger vivo (sin cambios)', datos);
     }
   } catch (e) {
     logError_('SOBREVENTA', e);
