@@ -188,7 +188,11 @@ function importarVentas_() {
 
   // ── 8. Marca de agua y retención ──────────────────────────────────────
   if (maxId > ultimoId) setProp_('ULTIMO_ID_LINEA', String(maxId));
-  recortarPorFecha_(CFG.H.WALMART, 2, CFG.RETENCION.WALMART);
+  // La columna de fecha se ubica por su título, no se da por hecho que es la C.
+  var shWm = libro_().getSheetByName(CFG.H.WALMART);
+  if (shWm) {
+    recortarPorFecha_(CFG.H.WALMART, mapaFisico_(shWm, ENC_WALMART)[2], CFG.RETENCION.WALMART);
+  }
 
   res.llamadas = llamadasDeHoy_() - llamadas0;
   res.seg = (Date.now() - t0) / 1000;

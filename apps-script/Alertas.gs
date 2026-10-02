@@ -70,13 +70,12 @@ function registrarAlertas_(filas) {
     sh.getRange(1, 1, 1, ENC_ALERTAS.length).setValues([ENC_ALERTAS]);
   }
 
+  // Las claves se arman por NOMBRE de encabezado: si la hoja trae las columnas
+  // en otro orden, igual se detecta el duplicado y no se repite la alerta.
   var claves = {};
-  var n = ultimaFilaColA_(sh);
-  if (n > 1) {
-    sh.getRange(2, 1, n - 1, 9).getValues().forEach(function (r) {
-      claves[String(r[1]) + '|' + sku_(r[4]) + '|' + num_(r[6])] = true;
-    });
-  }
+  filasOrdenadas_(sh, ENC_ALERTAS).forEach(function (r) {
+    claves[String(r[1]) + '|' + sku_(r[4]) + '|' + num_(r[6])] = true;
+  });
 
   var ahora = new Date();
   var nuevas = [];
@@ -89,7 +88,9 @@ function registrarAlertas_(filas) {
   });
 
   if (nuevas.length) {
-    agregarFilas_(sh, nuevas);
+    // Y se escriben en la columna que les toque hoy, no en A–I a ciegas.
+    var colAncla = mapaFisico_(sh, ENC_ALERTAS)[0] + 1;
+    agregarFilas_(sh, enOrdenFisico_(sh, ENC_ALERTAS, nuevas), colAncla);
     logWarn_('ALERTAS', nuevas.length + ' venta(s) de Walmart por debajo del mínimo',
              { skus: nuevas.slice(0, 10).map(function (a) { return a[4]; }) });
   }
@@ -160,8 +161,7 @@ function resumenWalmart() {
   var sh = libro_().getSheetByName(CFG.H.WALMART);
   if (!sh || sh.getLastRow() < 2) { avisar_('Todavía no hay ventas de Walmart.'); return; }
 
-  var n = ultimaFilaColA_(sh);
-  var datos = sh.getRange(2, 1, n - 1, N_COLS_WALMART).getValues();
+  var datos = filasOrdenadas_(sh, ENC_WALMART);
   var importe = 0, sinRef = 0;
   datos.forEach(function (f) {
     importe += num_(f[10]);

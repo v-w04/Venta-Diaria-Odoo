@@ -444,14 +444,20 @@ function categoriasConocidas_() {
         }
       });
   };
-  leer(K_HIST, KH.SKU, KH.CAT);
+  // En el histórico, SKU y CATEGORIA se ubican por su título.
+  var shH = libro_().getSheetByName(K_HIST);
+  if (shH) {
+    var fisH = mapaFisico_(shH, ENC_K_HIST);
+    leer(K_HIST, fisH[KH.SKU], fisH[KH.CAT]);
+  }
   // En ACTIVOS la categoría se busca por encabezado ("KAM" o "CATEGORIA"),
-  // por si la hoja aún trae el formato anterior.
+  // por si la hoja aún trae el formato anterior; el SKU, igual, por título.
   var shA = libro_().getSheetByName(K_ACT);
   if (shA && shA.getLastColumn() > 0) {
     var mapa = mapaColumnas_(shA.getRange(1, 1, 1, shA.getLastColumn()).getValues()[0]);
     var iCat = mapa['KAM'] !== undefined ? mapa['KAM'] : mapa['CATEGORIA'];
-    if (iCat !== undefined) leer(K_ACT, KA.SKU, iCat);
+    var iSkuA = mapa['SKU'] !== undefined ? mapa['SKU'] : KA.SKU;
+    if (iCat !== undefined) leer(K_ACT, iSkuA, iCat);
   }
   return m;
 }
@@ -614,8 +620,8 @@ function llaveKiller_(sku, negoc, cupon, ini, fin) {
  */
 function guardarEnHistorico_(lista, carga) {
   var sh = hoja_(K_HIST, ENC_K_HIST);
-  var n = ultimaFilaColA_(sh);
-  var datos = n > 1 ? sh.getRange(2, 1, n - 1, ENC_K_HIST.length).getValues() : [];
+  // Las 23 columnas se ubican por su título, no por su letra.
+  var datos = filasOrdenadas_(sh, ENC_K_HIST);
   var idx = {};
   datos.forEach(function (r, i) {
     idx[llaveKiller_(r[KH.SKU], r[KH.NEGOC], r[KH.CUPON], r[KH.INI], r[KH.FIN])] = i;
@@ -640,11 +646,14 @@ function guardarEnHistorico_(lista, carga) {
       k.categoria || cats[k.sku] || cats[k.general] || '', ahora]);
   });
 
+  var fis = mapaFisico_(sh, ENC_K_HIST);
   if (repetidos) {
-    sh.getRange(2, KH.VISTO + 1, datos.length, 1)
+    sh.getRange(2, fis[KH.VISTO] + 1, datos.length, 1)
       .setValues(datos.map(function (r) { return [r[KH.VISTO]]; }));
   }
-  if (nuevas.length) agregarFilas_(sh, nuevas);
+  if (nuevas.length) {
+    agregarFilas_(sh, enOrdenFisico_(sh, ENC_K_HIST, nuevas), fis[KH.CARGA] + 1);
+  }
   return { nuevos: nuevas.length, repetidos: repetidos };
 }
 
@@ -698,9 +707,8 @@ function precioConDescuento_(minimo, desc) {
 /** Renglones del histórico como objetos. */
 function leerHistorico_() {
   var sh = libro_().getSheetByName(K_HIST);
-  var n = sh ? ultimaFilaColA_(sh) : 0;
-  if (n < 2) return [];
-  return sh.getRange(2, 1, n - 1, ENC_K_HIST.length).getValues()
+  if (!sh) return [];
+  return filasOrdenadas_(sh, ENC_K_HIST)
     .filter(function (r) { return sku_(r[KH.SKU]); })
     .map(function (r) {
       return {
@@ -980,9 +988,9 @@ function reporteKillersMes_(anio, mes) {
   // Ventas de Walmart del mes, por SKU general
   var ventas = {};
   var shW = libro_().getSheetByName(CFG.H.WALMART);
-  var nW = shW ? ultimaFilaColA_(shW) : 0;
-  if (nW > 1) {
-    shW.getRange(2, 1, nW - 1, 11).getValues().forEach(function (f) {
+  if (shW) {
+    // Por nombre de encabezado: aguanta que muevan columnas en WALMART.
+    filasOrdenadas_(shW, ENC_WALMART).forEach(function (f) {
       var d = f[2] instanceof Date ? f[2] : fecha_(f[2]);
       if (!(d instanceof Date) || d.getTime() < ini || d.getTime() > fin) return;
       (ventas[skuBase_(f[6])] = ventas[skuBase_(f[6])] || []).push({ t: d.getTime(), p: num_(f[9]), q: num_(f[8]), imp: num_(f[10]) });

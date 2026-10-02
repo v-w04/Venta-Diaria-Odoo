@@ -167,25 +167,90 @@ function tablaPrecios_() {
   var n = sh.getLastRow();
   if (n < CFG.PE.FILA_DATOS) return t;
 
-  var ancho = Math.min(sh.getMaxColumns(), CFG.PE.COL_CUPON_PRECIO);
+  var C = columnasPreciosErik_(sh);
+  var ancho = Math.max(sh.getLastColumn(), CFG.PE.COL_CUPON_PRECIO);
+  if (ancho > sh.getMaxColumns()) ancho = sh.getMaxColumns();
   var datos = sh.getRange(CFG.PE.FILA_DATOS, 1, n - CFG.PE.FILA_DATOS + 1, ancho).getValues();
+
+  var v = function (f, i) { return (i >= 0 && i < f.length) ? f[i] : ''; };
 
   for (var i = 0; i < datos.length; i++) {
     var f = datos[i];
-    var s = sku_(f[CFG.PE.COL_SKU - 1]);
+    var s = sku_(v(f, C.SKU));
     if (s) {
-      var c = num_(f[CFG.PE.COL_CLASICA - 1]), p = num_(f[CFG.PE.COL_PREMIUM - 1]);
+      var c = num_(v(f, C.CLASICA)), p = num_(v(f, C.PREMIUM));
       if (c > 0 || p > 0) { t.minimos[s] = { c: c, p: p }; t.nMinimos++; }
     }
-    if (ancho >= CFG.PE.COL_CUPON_PRECIO) {
-      var pub = sku_(f[CFG.PE.COL_KILLER_SKU - 1]);
-      var gen = sku_(f[CFG.PE.COL_CUPON_SKU - 1]) || (pub ? skuBase_(pub) : '');
-      var precio = num_(f[CFG.PE.COL_CUPON_PRECIO - 1]) || num_(f[CFG.PE.COL_KILLER_PRECIO - 1]);
-      if (gen && precio > 0) t.killersNQ.push({ general: gen, pub: pub, precio: precio });
-    }
+    var pub = sku_(v(f, C.KILLER_SKU));
+    var gen = sku_(v(f, C.CUPON_SKU)) || (pub ? skuBase_(pub) : '');
+    var precio = num_(v(f, C.CUPON_PRECIO)) || num_(v(f, C.KILLER_PRECIO));
+    if (gen && precio > 0) t.killersNQ.push({ general: gen, pub: pub, precio: precio });
   }
   t.nCupones = t.killersNQ.length;
   return t;
+}
+
+/**
+ * Dónde está cada columna de PRECIOS ERIK. Esta hoja es especial: trae DOS
+ * filas de títulos (1 y 2) y los datos arrancan en la 3, y las columnas N–Q
+ * (killers/cupones) las mantienes tú a mano. Así que primero se buscan por el
+ * TEXTO del título — en la fila 1 o en la 2, la que lo traiga — y solo si no
+ * aparece se usa la letra de siempre (CFG.PE). Nunca truena: a lo mucho se
+ * comporta como antes y deja un aviso en el LOG.
+ */
+function columnasPreciosErik_(sh) {
+  var def = {
+    SKU:           CFG.PE.COL_SKU - 1,
+    CLASICA:       CFG.PE.COL_CLASICA - 1,
+    PREMIUM:       CFG.PE.COL_PREMIUM - 1,
+    KILLER_SKU:    CFG.PE.COL_KILLER_SKU - 1,
+    KILLER_PRECIO: CFG.PE.COL_KILLER_PRECIO - 1,
+    CUPON_SKU:     CFG.PE.COL_CUPON_SKU - 1,
+    CUPON_PRECIO:  CFG.PE.COL_CUPON_PRECIO - 1
+  };
+  // Títulos que se aceptan para cada cosa (sin acentos ni mayúsculas: norm_).
+  // Los primeros de cada lista son los que TÚ pusiste en la hoja el 02/10/2026.
+  // OJO: no se aceptan los títulos de la fila 2 ("KILLERS", "SIN -2") porque
+  // están repetidos en dos columnas y no distinguen cuál es cuál.
+  var alias = {
+    SKU:           ['SKU GENERAL'],
+    CLASICA:       ['CLASICA', 'WALMART CLASICA'],
+    PREMIUM:       ['PREMIUM', 'WALMART PREMIUM'],
+    KILLER_SKU:    ['SKU KILLER', 'KILLER SKU', 'SKU PUBLICACION', 'SKU DE LA PUBLICACION'],
+    KILLER_PRECIO: ['PRECIO KILLERS', 'PRECIO KILLER', 'PRECIO NEGOCIADO'],
+    CUPON_SKU:     ['SKU SIN -2', 'SKU CUPON', 'SKU GENERAL CUPON', 'SKU CON CUPON'],
+    CUPON_PRECIO:  ['PRECIO SIN -2', 'PRECIO CUPON', 'PRECIO CON CUPON']
+  };
+
+  var out = {}, movidas = [];
+  try {
+    var nc = Math.max(sh.getLastColumn(), CFG.PE.COL_CUPON_PRECIO);
+    var f1 = sh.getRange(1, 1, 1, nc).getValues()[0];
+    var f2 = sh.getRange(2, 1, 1, nc).getValues()[0];
+    var mapa = {};
+    for (var c = 0; c < nc; c++) {
+      [f1[c], f2[c]].forEach(function (x) {
+        var k = norm_(x);
+        if (k && mapa[k] === undefined) mapa[k] = c;
+      });
+    }
+    Object.keys(def).forEach(function (llave) {
+      var i;
+      alias[llave].some(function (nombre) {
+        var j = mapa[norm_(nombre)];
+        if (j !== undefined) { i = j; return true; }
+        return false;
+      });
+      out[llave] = (i === undefined) ? def[llave] : i;
+      if (i !== undefined && i !== def[llave]) {
+        movidas.push(llave + ': ' + letraCol_(def[llave]) + '→' + letraCol_(i));
+      }
+    });
+    if (movidas.length) avisarColumnas_(sh.getName(), 'movidas', movidas);
+    return out;
+  } catch (e) {
+    return def;   // ante cualquier duda, el comportamiento de siempre
+  }
 }
 
 

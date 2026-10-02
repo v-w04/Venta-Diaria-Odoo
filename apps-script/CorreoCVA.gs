@@ -39,7 +39,9 @@ function enviarCorreoCVA_() {
     setProp_('CVA_DIA_REPORTE', hoy);           // una vez al día, pase lo que pase
     if (hasta <= desde) return false;           // sin ventas: no se manda nada
 
-    var filas = sh.getRange(desde + 1, 1, hasta - desde, 12).getValues()
+    // Por NOMBRE de encabezado: si alguien mueve una columna de PEDIDOS CVA,
+    // el correo sigue leyendo bien el SKU, la cantidad y el importe.
+    var filas = filasOrdenadas_(sh, ENC_VENTAS, desde + 1)
       .filter(function (f) { return f[0] !== '' && f[0] !== null; });
     setProp_('CVA_FILA_AVISADA', String(hasta));
     if (!filas.length) return false;
