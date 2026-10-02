@@ -86,10 +86,16 @@ var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'PROMO CATEGORIA (pun
 // de esa categoría con stock (del dashboard WM_Inv) entran a KILLERS ACTIVOS.
 // Vacío = sin promoción. MARCAS: prefijos de SKU que también cuentan como de
 // esa categoría aunque Walmart los tenga en otro departamento (DJI, CAN…).
-// YA APLICADA EN EL SITE: vacío/NO = el MÍNIMO del site viene sin la rebaja
-// (así está hoy: tu hoja Activos le quitaba el −7% al mínimo) → aquí se calcula
-// la Carga igual que tu hoja: INT((mín − mín×7%)/10)*10+9.
-// SI = el mínimo del site ya viene rebajado → Carga = mínimo tal cual.
+// YA APLICADA EN EL SITE — OJO, cambió el 02/10/2026:
+// El site (Ofertas Especiales → Promociones) SIEMPRE rehace el precio con la
+// comisión final, así que el MÍNIMO que baja a PRECIOS ERIK ya viene rebajado.
+// Comprobado: CAN-EOS2000D-NEG-1842 da 8,049/8,449 en el site y 8,049/8,449 en
+// PRECIOS ERIK. Por eso ahora el valor por omisión es "ya aplicada":
+//   vacío o SI = el mínimo del site ya trae la rebaja → Carga = mínimo tal cual,
+//                y las ventas NO se revalidan contra una rebaja extra.
+//   NO (escrito a mano) = el mínimo viene SIN rebaja → se recalcula aquí:
+//                INT((mín − mín×puntos%)/10)*10+9.
+// Antes era al revés y provocaba doble descuento en las categorías con promo.
 
 // Lo que MSI le suma a la comisión normal. Se deduce de los killers pegados
 // (Comisión MSI − Comisión sobre el cupón); este es el respaldo.
@@ -276,7 +282,9 @@ function promosCategoria_() {
     if (!cat) return;
     var red = descKam_(r[3]);
     out.cats[cat] = { nombre: String(r[0]), normal: com[cat], red: red, origen: red ? 'COMISIONES' : '',
-                      enSite: norm_(r[5]) === 'SI' };
+                      // Por omisión SÍ viene aplicada en el site (ver nota de
+                      // ENC_K_COM). Solo un "NO" explícito la recalcula aquí.
+                      enSite: norm_(r[5]) !== 'NO' };
     out.nombres[cat] = cat;
     String(r[2] || '').split(',').forEach(function (x) {
       var k = norm_(x);
@@ -354,24 +362,66 @@ function stockOdoo_() {
   return out;
 }
 
+/**
+ * Qué SKUs entran a KILLERS ACTIVOS por promoción de comisión.
+ *
+ * Dos modos, y gana el primero que se pueda:
+ *
+ *   1. LISTA DEL SITE (lo preciso). Site Sheet baja cada hora la hoja
+ *      "Promociones" con los SKUs que de verdad traen promoción — el site la
+ *      captura uno por uno, no por categoría. Si de 200 cámaras solo 8 tienen
+ *      promo, entran esas 8. Nada de adivinar.
+ *   2. POR CATEGORÍA (el respaldo de siempre). Si esa hoja no existe todavía,
+ *      está vacía o no se pudo leer, se usa COMISIONES → PROMO CATEGORIA y
+ *      entran todos los SKUs de la categoría con stock, como antes.
+ *
+ * En los dos modos se respeta tu regla de stock: TOTAL (Odoo) ≥ 4, o algo en WFS.
+ */
 function skusPromoCategoria_(pc) {
+  var promos = promosDelSite_();            // null = no se pudo, usamos el modo 2
   var conPromo = Object.keys(pc.cats).filter(function (c) { return pc.cats[c].red > 0; });
-  if (!conPromo.length) return [];
+  if (!promos && !conPromo.length) return [];
+
   var st = {};
   try { st = stockOdoo_(); }
   catch (e) { logWarn_('KILLERS', 'No se pudo leer el stock de Odoo de Site Sheet; se usa el del dashboard', { error: String(e && e.message || e) }); }
-  var out = [];
+
+  var out = [], conStock = 0;
   leerDashboard_().forEach(function (d) {
     var s = d.sku;
     if (skuIgnorado_(s) || /-(OB|OPENBOX)$/.test(s)) return;
+
     var cat = categoriaDeSku_(pc, s, d.shelf);
-    if (!cat || !(pc.cats[cat].red > 0)) return;
+    var ps = promos ? promoSiteDeSku_(promos, s) : null;
+
+    if (promos) {
+      if (!ps) return;                      // modo 1: solo los que el site marcó
+      if (!cat && ps.cat) cat = norm_(ps.cat);
+      if (!cat) cat = norm_(d.shelf || '');
+    } else {
+      if (!cat || !(pc.cats[cat].red > 0)) return;   // modo 2: toda la categoría
+    }
+
     // Tu regla: TOTAL (Odoo) ≥ 4, o si no, que haya algo en WFS
     var tot = st[s] !== undefined ? st[s] : (st[skuSinVariante_(s)] !== undefined ? st[skuSinVariante_(s)] :
               (st[skuBase_(s)] !== undefined ? st[skuBase_(s)] : d.tot));
     if (!(tot >= 4 || d.wfs > 0)) return;
+    conStock++;
+
     out.push({ sku: s, nombre: d.nombre, cat: cat, stock: tot, depto: d.shelf });
   });
+
+  // reconstruirActivos_ corre cada hora desde el trigger: el LOG solo lleva
+  // renglón cuando el número CAMBIA, más uno al día. Igual que la sobreventa.
+  if (promos) {
+    var huella = hoy_() + '|' + promos.n + '|' + promos.noAplican + '|' + conStock;
+    if (prop_('PROMOS_SITE_HUELLA') !== huella) {
+      setProp_('PROMOS_SITE_HUELLA', huella);
+      logInfo_('KILLERS', 'Promociones tomadas del site (SKU por SKU)', {
+        enElSite: promos.n, noAplican: promos.noAplican, conStock: conStock
+      });
+    }
+  }
   return out;
 }
 
@@ -851,11 +901,11 @@ function reconstruirActivos_() {
 
   // Promoción de CATEGORÍA: los SKUs de la categoría (clásica y MSI) con stock
   // y SIN killer vigente. Los que tienen killer ya traen su precio del KAM.
-  // El site NO trae la promoción, así que el precio de carga se rehace aquí
-  // con la comisión rebajada, sobre el mínimo del site:
-  //   · YA APLICADA EN EL SITE = SI → Carga = el mínimo del site tal cual.
-  //   · vacío/NO → Carga = INT((mín − mín × puntos%)/10)*10+9, la fórmula de tu
-  //     hoja Activos (8,049 con 7 → 7,489). Clásica y MSI sin killer vigente.
+  //   · vacío o SI (lo normal) → el site ya rehizo el precio con la comisión
+  //     final, así que Carga = el mínimo del site tal cual.
+  //   · NO escrito a mano → Carga = INT((mín − mín × puntos%)/10)*10+9, la
+  //     fórmula de tu hoja Activos (8,049 con 7 → 7,489).
+  // Clásica y MSI sin killer vigente.
   var filaPromoCat = function (p) {
     var r = filas.length + 2;
     var info = pc.cats[p.cat];
