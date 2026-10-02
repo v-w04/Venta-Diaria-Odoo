@@ -909,7 +909,10 @@ function reconstruirActivos_() {
   // Clásica y MSI sin killer vigente.
   var filaPromoCat = function (p) {
     var r = filas.length + 2;
-    var info = pc.cats[p.cat];
+    // Con la lista del site pueden llegar categorías que COMISIONES todavía no
+    // tiene (p. ej. Videojuegos antes de capturarle los puntos). Sin esta red,
+    // info sería undefined y la corrida entera se caía.
+    var info = pc.cats[p.cat] || { normal: undefined, red: 0, nombre: p.cat || '' };
     var llave = llavePrecio_(tabla, p.sku);
     var colMin = tipoPublicacion_(p.sku) === 'PREMIUM' ? 'D' : 'C';
     var normal = info.normal === undefined ? '' : info.normal;
