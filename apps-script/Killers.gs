@@ -557,6 +557,39 @@ function nuevaCarga_() {
 
 // ── Botón: procesar lo pegado ─────────────────────────────────────────────
 
+/**
+ * Menú: rehace KILLERS ACTIVOS sin tener que pegar nada en KILLERS PEGAR.
+ *
+ * Es lo que hay que darle cuando capturaste una promoción nueva en el site y
+ * no quieres esperar a que el trigger lo haga solo (corre una vez por hora).
+ * No toca el histórico ni lo pegado del seller center: solo vuelve a armar la
+ * hoja de ACTIVOS con los killers vigentes y las promociones que trae el site.
+ */
+function actualizarActivos() {
+  var lock = candado_(180000);
+  if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nEspera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
+  try {
+    asegurarHojasKillers_();
+    var a = reconstruirActivos_();
+    setProp_('KILLERS_REFRESCO', String(Date.now()));
+    var p = promosDelSite_();
+    avisar_('KILLERS ACTIVOS actualizada\n\n' +
+      'Renglones: ' + a.total + '\n' +
+      '  · killers vigentes: ' + (a.total - (a.promoCategoria || 0) - (a.porIniciar || 0)) + '\n' +
+      '  · por promoción de categoría: ' + (a.promoCategoria || 0) + '\n' +
+      '  · por iniciar: ' + (a.porIniciar || 0) + '\n' +
+      'Salieron (vencidos o ya no vienen): ' + (a.salieron || 0) + '\n\n' +
+      (p ? 'Promociones leídas del site: ' + p.n + '  (descartadas: ' + p.noAplican + ')\n' +
+           'Fuente: ' + (p.origen === 'espejo' ? 'copia local, Site Sheet no respondió' : 'Site Sheet')
+         : 'Sin lista de promociones del site: se usó la promoción por categoría de COMISIONES.'));
+  } catch (e) {
+    logError_('KILLERS', e);
+    avisar_('No se pudo actualizar KILLERS ACTIVOS:\n\n' + e);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function procesarKillers() {
   // Botón: espera hasta 3 min a que termine el trigger que esté corriendo.
   var lock = candado_(180000);

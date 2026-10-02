@@ -14,6 +14,7 @@ function onOpen() {
       .addItem('🔄 Importar ventas de Odoo ahora', 'importarVentasAhora')
       .addItem('💲 Actualizar PRECIOS ERIK desde Site Sheet', 'actualizarPreciosMinimos')
       .addItem('🎯 Procesar killers pegados', 'procesarKillers')
+      .addItem('🔄 Actualizar KILLERS ACTIVOS (sin pegar nada)', 'actualizarActivos')
       .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')
       .addSeparator()
       .addItem('📦 Revisar sobreventa (Walmart)', 'revisarSobreventa')
