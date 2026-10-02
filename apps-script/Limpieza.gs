@@ -23,6 +23,8 @@ function hojasProtegidas_() {
   var hojas = Object.keys(CFG.H).map(function (k) { return CFG.H[k]; });
   // Las hojas de sobreventa (WFS / Pick) también son del sistema.
   CFG.SOBREVENTA.DESTINOS.forEach(function (d) { hojas.push(d.hoja); });
+  // La copia local de las promociones del site también.
+  hojas.push(PS_ESPEJO);
   return hojas;
 }
 

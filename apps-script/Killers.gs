@@ -414,11 +414,12 @@ function skusPromoCategoria_(pc) {
   // reconstruirActivos_ corre cada hora desde el trigger: el LOG solo lleva
   // renglón cuando el número CAMBIA, más uno al día. Igual que la sobreventa.
   if (promos) {
-    var huella = hoy_() + '|' + promos.n + '|' + promos.noAplican + '|' + conStock;
+    var huella = hoy_() + '|' + promos.n + '|' + promos.noAplican + '|' + conStock + '|' + promos.origen;
     if (prop_('PROMOS_SITE_HUELLA') !== huella) {
       setProp_('PROMOS_SITE_HUELLA', huella);
       logInfo_('KILLERS', 'Promociones tomadas del site (SKU por SKU)', {
-        enElSite: promos.n, noAplican: promos.noAplican, conStock: conStock
+        enElSite: promos.n, noAplican: promos.noAplican, conStock: conStock,
+        leidasDe: promos.origen === 'espejo' ? 'copia local (Site Sheet no respondió)' : 'Site Sheet'
       });
     }
   }

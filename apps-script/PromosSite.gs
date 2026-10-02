@@ -13,12 +13,25 @@
  * El PRECIO no se toca aquí: el mínimo que baja de Site Sheet a PRECIOS ERIK ya
  * viene rehecho con la comisión final. Esto es solo "a quién proponerle killer".
  *
- * Si la hoja no existe, está vacía o no se puede leer, devuelve null y el
- * llamador se queda con la regla vieja (toda la categoría). Nunca truena.
+ * ESPEJO LOCAL. Cada corrida se guarda una copia tal cual de esa hoja en la
+ * hoja "Promociones (site)" de ESTE libro. No es duplicar la información —
+ * el site sigue mandando — es un respaldo con dos usos concretos:
+ *
+ *   1. Si Site Sheet no se puede leer, se trabaja con la última copia buena
+ *      en vez de quedarse ciego.
+ *   2. Si el site CAMBIA los nombres de sus columnas, se compara contra la
+ *      copia anterior y queda un aviso en el LOG con el antes y el después.
+ *      (Pasó el 02/10/2026 a las 10:50: ENCONTRADO → EN EL SITE,
+ *      REDUCCION → PUNTOS DE DESCUENTO, COM FINAL → COMISION CON PROMO.)
+ *
+ * Si no hay ni hoja remota ni espejo, devuelve null y el llamador se queda con
+ * la regla vieja (toda la categoría). Nunca truena.
  */
 
-var PS_HOJA  = 'Promociones';
-var PS_CACHE = 'PROMOS_SITE';      // caché de 10 min (la hoja cambia cada hora)
+var PS_HOJA   = 'Promociones';            // hoja en Site Sheet
+var PS_ESPEJO = 'Promociones (site)';     // copia local, en ESTE libro
+var PS_CACHE  = 'PROMOS_SITE';            // caché de 10 min
+var PS_ENC    = 'PROMOS_SITE_ENC';        // firma de encabezados de la última copia
 
 /**
  * Encabezados de la hoja "Promociones" de Site Sheet, verificados contra la
@@ -34,17 +47,18 @@ var PS_CACHE = 'PROMOS_SITE';      // caché de 10 min (la hoja cambia cada hora
 var PS_ALIAS = {
   SKU:        ['SKU', 'SKU CAPTURADO', 'SKU BASE', 'SKU GENERAL'],
   CAT:        ['CATEGORIA', 'CATEGORIA WALMART'],
-  NOMBRE:     ['NOMBRE', 'PRODUCTO', 'TITULO'],
-  NORMAL:     ['COM NORMAL', 'COMISION NORMAL', 'COMISION'],
-  RED:        ['REDUCCION', 'PUNTOS'],
-  FINAL:      ['COM FINAL', 'COMISION FINAL'],
+  NOMBRE:     ['PRODUCTO', 'NOMBRE', 'TITULO'],
+  NORMAL:     ['COMISION NORMAL', 'COM NORMAL', 'COMISION'],
+  RED:        ['PUNTOS DE DESCUENTO', 'REDUCCION', 'PUNTOS'],
+  FINAL:      ['COMISION CON PROMO', 'COM FINAL', 'COMISION FINAL'],
   APLICA:     ['APLICA', 'ACTIVA', 'VIGENTE'],
-  // ENCONTRADO = NO → el SKU capturado no existe en /precios-em (son las
-  // variantes -2/-3 que el site no reconoce). Son los que tu pantalla cuenta
-  // como "NO APLICAN". No traen precio ni mínimo: no sirve proponerlos.
-  ENCONTRADO: ['ENCONTRADO'],
-  MINCLA:     ['MIN CLASICA', 'MINIMO CLASICA'],
-  MINPRE:     ['MIN PREMIUM', 'MINIMO PREMIUM']
+  // "EN EL SITE" (antes "ENCONTRADO") = NO → el SKU capturado no existe en
+  // /precios-em (son las variantes -2/-3 que el site no reconoce). Son los que
+  // tu pantalla cuenta como "NO APLICAN": no traen precio ni mínimo, así que no
+  // sirve proponerlos.
+  ENCONTRADO: ['EN EL SITE', 'ENCONTRADO'],
+  MINCLA:     ['MINIMO CLASICA', 'MIN CLASICA'],
+  MINPRE:     ['MINIMO PREMIUM', 'MIN PREMIUM']
 };
 
 /**
@@ -76,21 +90,88 @@ function promosDelSite_() {
   return r;
 }
 
-function psLeerHoja_() {
-  var ss = SpreadsheetApp.openById(CFG.SITE_SHEET_ID);
-  var sh = ss.getSheetByName(PS_HOJA);
-  if (!sh) {
-    psAvisarUnaVez_('falta', function () {
-      logWarn_('PROMOS SITE', 'Site Sheet todavía no tiene la hoja "' + PS_HOJA + '". ' +
-               'Córrele una vez el menú "🏷️ Bajar promociones del site".');
+/**
+ * Trae la tabla cruda: primero de Site Sheet, y si no se puede, del espejo
+ * local. Devuelve { enc: [...], datos: [[...]], origen: 'site'|'espejo' }.
+ */
+function psTabla_() {
+  // 1) Site Sheet (la fuente)
+  try {
+    var sh = SpreadsheetApp.openById(CFG.SITE_SHEET_ID).getSheetByName(PS_HOJA);
+    if (sh) {
+      var nf = sh.getLastRow(), nc = sh.getLastColumn();
+      if (nf >= 2 && nc >= 1) {
+        var todo = sh.getRange(1, 1, nf, nc).getValues();
+        var t = { enc: todo[0], datos: todo.slice(1), origen: 'site' };
+        psGuardarEspejo_(todo);          // respaldo + detección de cambios
+        return t;
+      }
+    } else {
+      psAvisarUnaVez_('falta', function () {
+        logWarn_('PROMOS SITE', 'Site Sheet todavía no tiene la hoja "' + PS_HOJA + '". ' +
+                 'Córrele una vez el menú "🏷️ Bajar promociones del site".');
+      });
+    }
+  } catch (e) {
+    psAvisarUnaVez_('error', function () {
+      logWarn_('PROMOS SITE', 'No se pudo leer "' + PS_HOJA + '" de Site Sheet; ' +
+               'se trabaja con la copia local "' + PS_ESPEJO + '"',
+               { error: String(e && e.message || e) });
     });
-    return null;
   }
 
-  var nf = sh.getLastRow(), nc = sh.getLastColumn();
-  if (nf < 2 || nc < 1) return null;
+  // 2) El espejo local, por si el de arriba falló
+  var esp = libro_().getSheetByName(PS_ESPEJO);
+  if (!esp) return null;
+  var ef = esp.getLastRow(), ec = esp.getLastColumn();
+  if (ef < 2 || ec < 1) return null;
+  var crudo = esp.getRange(1, 1, ef, ec).getValues();
+  return { enc: crudo[0], datos: crudo.slice(1), origen: 'espejo' };
+}
 
-  var enc = sh.getRange(1, 1, 1, nc).getValues()[0];
+/**
+ * Guarda la copia tal cual en este libro y avisa si el site cambió de columnas.
+ * La hoja se reescribe entera; es una foto, no un histórico.
+ */
+function psGuardarEspejo_(todo) {
+  try {
+    var enc = todo[0].map(function (x) { return String(x || ''); });
+    var firma = enc.join('|');
+
+    // ¿El site cambió los nombres de sus columnas desde la última copia?
+    var antes = prop_(PS_ENC);
+    if (antes && antes !== firma) {
+      var a = antes.split('|'), b = enc;
+      var quitadas = a.filter(function (x) { return x && b.indexOf(x) < 0; });
+      var nuevas   = b.filter(function (x) { return x && a.indexOf(x) < 0; });
+      logWarn_('PROMOS SITE', 'El site CAMBIÓ las columnas de la hoja de promociones',
+               { yaNoEstan: quitadas, ahoraHay: nuevas, total: enc.length });
+    }
+    setProp_(PS_ENC, firma);
+
+    var sh = hoja_(PS_ESPEJO, null);
+    sh.clearContents();
+    if (sh.getMaxColumns() < todo[0].length) {
+      sh.insertColumnsAfter(sh.getMaxColumns(), todo[0].length - sh.getMaxColumns());
+    }
+    if (sh.getMaxRows() < todo.length + 1) {
+      sh.insertRowsAfter(sh.getMaxRows(), todo.length + 1 - sh.getMaxRows());
+    }
+    sh.getRange(1, 1, todo.length, todo[0].length).setValues(todo);
+    sh.getRange(todo.length + 1, 1).setValue('Copia de Site Sheet · ' + ahora_());
+  } catch (e) {
+    psAvisarUnaVez_('espejo', function () {
+      logWarn_('PROMOS SITE', 'No se pudo guardar la copia local de promociones',
+               { error: String(e && e.message || e) });
+    });
+  }
+}
+
+function psLeerHoja_() {
+  var t = psTabla_();
+  if (!t) return null;
+
+  var enc = t.enc, nc = enc.length;
   var mapa = mapaColumnas_(enc);
   var col = function (llave) {
     var lista = PS_ALIAS[llave];
@@ -117,7 +198,7 @@ function psLeerHoja_() {
       iApl = col('APLICA'), iEnc = col('ENCONTRADO'),
       iMinC = col('MINCLA'), iMinP = col('MINPRE');
 
-  var datos = sh.getRange(2, 1, nf - 1, nc).getValues();
+  var datos = t.datos;
   var skus = {}, n = 0, noAplican = 0;
   var esNo = function (v) {
     var a = norm_(v);
@@ -154,7 +235,7 @@ function psLeerHoja_() {
   });
 
   if (!n) return null;
-  return { skus: skus, n: n, noAplican: noAplican };
+  return { skus: skus, n: n, noAplican: noAplican, origen: t.origen };
 }
 
 /** "10%" / 0.1 / 10 → 0.1. Vacío si no se puede. */
