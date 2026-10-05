@@ -24,6 +24,9 @@ function contextoPrecios_() {
     try { actualizarPreciosErik_(true); } catch (e) { logError_('PRECIOS', e); }
     tabla = tablaPrecios_();
   }
+  // Antes de validar, se asegura que el histórico traiga los killers que hoy
+  // tiene Site Sheet (lee cada ~4 min; si no cambió, no escribe). Nunca truena.
+  sincronizarKillersSite_(false);
   return { tabla: tabla, killers: killersParaValidar_(tabla), listaCaida: false,
            asignados: leerAsignados_() };
 }
