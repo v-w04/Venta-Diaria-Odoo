@@ -409,18 +409,13 @@ function revisarPreciosAuto() {
       actualizarPreciosErik_(false);
       setProp_('HUELLA_PRECIOS', huella);
     }
-    // Killers: se leen de Site Sheet (cada ~4 min como mucho; si la lista no
-    // cambió no se escribe nada). Ver KillersSite.gs.
-    sincronizarKillersSite_(false);
-    // KILLERS ACTIVOS se rehace cuando llegaron killers nuevos del site, y de
-    // todos modos una vez por hora (estados, KAM nuevos, mínimos).
-    if (prop_('KILLERS_ACTIVOS_PENDIENTE') === '1' ||
-        Date.now() - Number(prop_('KILLERS_REFRESCO', '0')) > 3600000) {
+    // Una vez por hora: KILLERS ACTIVOS se refresca (estados, KAM nuevos,
+    // mínimos). No toca lo del seller center.
+    if (Date.now() - Number(prop_('KILLERS_REFRESCO', '0')) > 3600000) {
       asegurarHojasKillers_();
       migrarCuponesViejos_();
       reconstruirActivos_();
       setProp_('KILLERS_REFRESCO', String(Date.now()));
-      setProp_('KILLERS_ACTIVOS_PENDIENTE', '');
     }
   } catch (e) {
     logError_('PRECIOS', e);

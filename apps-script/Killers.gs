@@ -3,10 +3,7 @@
  *
  * Reemplaza el archivo "Walmart Killers" (Archivo descargado → mes → Activos).
  *
- *   (desde 05/10/2026) Los killers se LEEN de la hoja "Killers" de Site Sheet
- *                      (KillersSite.gs) y entran solos a KILLERS HISTORICO.
- *                      Pegar a mano ya no hace falta; lo de abajo queda de respaldo.
- *   KILLERS PEGAR      (respaldo) pegas lo que baja Table Capture del seller
+ *   KILLERS PEGAR      pegas tal cual lo que baja Table Capture del seller
  *                      center (con o sin encabezados).
  *   KILLERS KAM        killers que te dan por correo/WhatsApp y no salen en
  *                      el seller center.
@@ -21,8 +18,8 @@
  *     mismo pegado o en pegados distintos. Todo se guarda, sin repetir.
  *   · Cada renglón del histórico sabe en qué carga apareció por primera vez
  *     y en cuál se vio por última vez.
- *   · La última carga es la foto oficial (la del site, o la del último pegado
- *     a mano): un SKU que ya no viene en ella, deja de estar en ACTIVOS.
+ *   · El último pegado es la foto oficial del seller center: un SKU que ya
+ *     no viene en él, deja de estar en ACTIVOS.
  *   · Para cada SKU de la foto (y los de KAM):
  *       1) el rango que cubre HOY; si hay varios, gana la carga más nueva
  *          y, empatando, el que empezó más tarde
@@ -561,34 +558,22 @@ function nuevaCarga_() {
 // ── Botón: procesar lo pegado ─────────────────────────────────────────────
 
 /**
- * Menú: trae los killers de Site Sheet y rehace KILLERS ACTIVOS. No hay que
- * pegar nada.
+ * Menú: rehace KILLERS ACTIVOS sin tener que pegar nada en KILLERS PEGAR.
  *
- * Es lo que hay que darle cuando quieres ver ya un killer o una promoción
- * nueva y no esperar al trigger (corre solo cada 15 min / 1 hora).
- * Primero lee la hoja "Killers" de Site Sheet y, si la lista cambió, la pasa a
- * KILLERS HISTORICO. Luego vuelve a armar la hoja de ACTIVOS con los killers
- * vigentes y las promociones que trae el site. No toca lo pegado a mano.
+ * Es lo que hay que darle cuando capturaste una promoción nueva en el site y
+ * no quieres esperar a que el trigger lo haga solo (corre una vez por hora).
+ * No toca el histórico ni lo pegado del seller center: solo vuelve a armar la
+ * hoja de ACTIVOS con los killers vigentes y las promociones que trae el site.
  */
 function actualizarActivos() {
   var lock = candado_(180000);
   if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nEspera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
   try {
     asegurarHojasKillers_();
-    var ks = sincronizarKillersSite_(true);
     var a = reconstruirActivos_();
     setProp_('KILLERS_REFRESCO', String(Date.now()));
-    setProp_('KILLERS_ACTIVOS_PENDIENTE', '');
     var p = promosDelSite_();
-    var txtKs = {
-      cambio: 'Killers de Site Sheet: ' + ks.leidos + ' leídos · ' + ks.vigentes + ' vigentes hoy · ' +
-              ks.nuevosEnHistorico + ' nuevos en el histórico (' + ks.carga + ')',
-      igual: 'Killers de Site Sheet: ' + (ks.n || 0) + ' · sin cambios desde la última lectura',
-      sin_lectura: '⚠️ No se pudo leer la hoja "Killers" de Site Sheet (revisa LOG Ventas). Se usó el histórico que ya había.',
-      vacia: '⚠️ La hoja "Killers" de Site Sheet no trae killers con precio y fecha. Se usó el histórico que ya había.',
-      error: '⚠️ Falló la lectura de killers de Site Sheet (revisa LOG Ventas). Se usó el histórico que ya había.'
-    }[ks.estado] || 'Killers de Site Sheet: ' + ks.estado;
-    avisar_('KILLERS ACTIVOS actualizada\n\n' + txtKs + '\n\n' +
+    avisar_('KILLERS ACTIVOS actualizada\n\n' +
       'Renglones: ' + a.total + '\n' +
       '  · killers vigentes: ' + (a.total - (a.promoCategoria || 0) - (a.porIniciar || 0)) + '\n' +
       '  · por promoción de categoría: ' + (a.promoCategoria || 0) + '\n' +
@@ -612,9 +597,7 @@ function procesarKillers() {
   try {
     var r = procesarKillers_();
     if (!r.leidos) {
-      avisar_('KILLERS PEGAR está vacía.\n\nYa no hace falta pegar nada: los killers se leen solos de Site Sheet.\n' +
-              'Para traerlos ya, usa "🔄 Actualizar KILLERS ACTIVOS".\n\n' +
-              '(Este botón solo sirve si algún día pegas a mano lo de Table Capture.)');
+      avisar_('KILLERS PEGAR está vacía.\n\nPega ahí lo que bajaste con Table Capture y vuelve a darle.');
       return;
     }
     avisar_('Killers procesados · ' + r.carga + '\n\n' +
@@ -863,14 +846,9 @@ function reconstruirActivos_() {
 
   // Un rango que Walmart ya quitó no regresa a Activos (sí queda en el
   // histórico para validar ventas de esas fechas).
-  // Cada origen tiene su propia "última carga": lo pegado a mano (ultima) y lo
-  // leído de Site Sheet (siteUltima). Un rango vale si lo trajo cualquiera de
-  // las dos; los números de carga son globales, no se pisan.
-  var siteUltima = Number(prop_('KILLERS_SITE_ULTIMA', '0'));
   var porSku = {};
   hist.forEach(function (k) {
-    if ((k.origen === 'SELLER CENTER' || k.origen === 'SITE') &&
-        k.visto !== ultima && k.visto !== siteUltima) return;
+    if (k.origen === 'SELLER CENTER' && k.visto !== ultima) return;
     if (k.origen === 'MEMORIA ANTERIOR') return;
     (porSku[k.sku] = porSku[k.sku] || []).push(k);
   });
