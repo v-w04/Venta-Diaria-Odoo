@@ -411,7 +411,10 @@ function skusPromoCategoria_(pc) {
     if (!(tot >= 4 || d.wfs > 0)) return;
     conStock++;
 
-    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: tot, depto: d.shelf });
+    // Precio con promoción que generó el site (clásica o premium según el SKU).
+    // Vacío en el modo 2 (sin lista del site): ahí se usa el mínimo, como antes.
+    var precioPromo = ps ? (tipoPublicacion_(s) === 'PREMIUM' ? ps.preP : ps.claP) : '';
+    out.push({ sku: s, nombre: d.nombre, cat: cat, stock: tot, depto: d.shelf, precioPromo: precioPromo });
   });
 
   // reconstruirActivos_ corre cada hora desde el trigger: el LOG solo lleva
@@ -978,6 +981,7 @@ function reconstruirActivos_() {
       p.sku, p.nombre,
       '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
         hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
+      (p.precioPromo > 0) ? p.precioPromo :                             // CLASICA/PREMIUM CON PROMO del site
       info.enSite ? '=C' + r :                                          // ya rebajado en el site
         '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + info.red.toFixed(4) +
         ')/10)*10+9,"")',                                               // D = mín − 7%, como tu hoja
@@ -990,7 +994,8 @@ function reconstruirActivos_() {
       '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
       'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
-      'PROMO CATEGORIA', 'VIGENTE', info.origen, info.enSite ? 'Ya aplicada en el site' : 'Recalculada aquí' // Y–AB
+      'PROMO CATEGORIA', 'VIGENTE', info.origen,
+      (p.precioPromo > 0) ? 'Precio con promo del site' : (info.enSite ? 'Ya aplicada en el site' : 'Recalculada aquí') // Y–AB
     ]);
   };
 

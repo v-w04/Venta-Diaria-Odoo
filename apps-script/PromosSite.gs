@@ -58,7 +58,11 @@ var PS_ALIAS = {
   // sirve proponerlos.
   ENCONTRADO: ['EN EL SITE', 'ENCONTRADO'],
   MINCLA:     ['MINIMO CLASICA', 'MIN CLASICA'],
-  MINPRE:     ['MINIMO PREMIUM', 'MIN PREMIUM']
+  MINPRE:     ['MINIMO PREMIUM', 'MIN PREMIUM'],
+  // Precio ya rebajado que genera el site con la comisión final (06/10/2026):
+  // es el que se publica en los SKUs de promoción de categoría.
+  CLACON:     ['CLASICA CON PROMO'],
+  PRECON:     ['PREMIUM CON PROMO']
 };
 
 /**
@@ -196,7 +200,8 @@ function psLeerHoja_() {
   var iCat = col('CAT'), iNom = col('NOMBRE'),
       iNor = col('NORMAL'), iRed = col('RED'), iFin = col('FINAL'),
       iApl = col('APLICA'), iEnc = col('ENCONTRADO'),
-      iMinC = col('MINCLA'), iMinP = col('MINPRE');
+      iMinC = col('MINCLA'), iMinP = col('MINPRE'),
+      iClaP = col('CLACON'), iPreP = col('PRECON');
 
   var datos = t.datos;
   var skus = {}, n = 0, noAplican = 0;
@@ -223,7 +228,9 @@ function psLeerHoja_() {
       red:    iRed >= 0 ? psPuntos_(f[iRed]) : '',
       final:  iFin >= 0 ? psPct_(f[iFin]) : '',
       minC:   iMinC >= 0 ? num_(f[iMinC]) : '',
-      minP:   iMinP >= 0 ? num_(f[iMinP]) : ''
+      minP:   iMinP >= 0 ? num_(f[iMinP]) : '',
+      claP:   iClaP >= 0 ? num_(f[iClaP]) : '',
+      preP:   iPreP >= 0 ? num_(f[iPreP]) : ''
     };
     n++;
 
