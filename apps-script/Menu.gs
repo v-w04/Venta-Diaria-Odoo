@@ -18,6 +18,7 @@ function onOpen() {
       .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')
       .addSeparator()
       .addItem('📦 Revisar sobreventa (Walmart)', 'revisarSobreventa')
+      .addItem('🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'buscarVentas')
       .addSeparator()
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')
       .addItem('🩺 Diagnóstico', 'diagnostico')

@@ -408,7 +408,9 @@ function skusPromoCategoria_(pc) {
     // Tu regla: TOTAL (Odoo) ≥ 4, o si no, que haya algo en WFS
     var tot = st[s] !== undefined ? st[s] : (st[skuSinVariante_(s)] !== undefined ? st[skuSinVariante_(s)] :
               (st[skuBase_(s)] !== undefined ? st[skuBase_(s)] : d.tot));
-    if (!(tot >= 4 || d.wfs > 0)) return;
+    // Con la lista del site (modo 1) entran TODAS las promociones, con o sin stock
+    // (06/10/2026). La regla de stock solo se queda en el modo 2 (por categoría).
+    if (!promos && !(tot >= 4 || d.wfs > 0)) return;
     conStock++;
 
     // Precio con promoción que generó el site (clásica o premium según el SKU).

@@ -46,7 +46,8 @@ var CFG = {
     K_HIST:   'KILLERS HISTORICO',              // todos los killers, por mes
     K_COM:    'COMISIONES',                     // comisión normal por categoría
     LOG:      'LOG Ventas',                     // bitácora del script
-    ASIGNADOS:'SKU ASIGNADOS'                   // SKUs vinculados a otro SKU
+    ASIGNADOS:'SKU ASIGNADOS',                  // SKUs vinculados a otro SKU
+    BUSCAR:   'BUSCAR VENTAS'                   // búsqueda de pedidos pegados (BuscarVentas.gs)
   },
 
   // Hoja vieja que se elimina: lo que traiga de WALMART y -CVA se pasa a sus
