@@ -18,6 +18,7 @@ function onOpen() {
       .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')
       .addSeparator()
       .addItem('📦 Revisar sobreventa (Walmart)', 'revisarSobreventa')
+      .addItem('✅ Comparar KILLERS ACTIVOS contra Walmart', 'compararConWalmart')
       .addItem('🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'buscarVentas')
       .addSeparator()
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')

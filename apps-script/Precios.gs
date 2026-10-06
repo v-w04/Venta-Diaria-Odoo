@@ -422,6 +422,9 @@ function revisarPreciosAuto() {
       setProp_('KILLERS_REFRESCO', String(Date.now()));
       setProp_('KILLERS_ACTIVOS_PENDIENTE', '');
     }
+    // Cotejo automático de KILLERS ACTIVOS contra los precios reales de Walmart
+    // (dashboard). Solo reescribe COMPARAR WALMART si cambió algo.
+    compararWalmartAuto_();
   } catch (e) {
     logError_('PRECIOS', e);
   } finally {
