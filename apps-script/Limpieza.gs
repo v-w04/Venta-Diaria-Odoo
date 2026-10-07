@@ -25,6 +25,7 @@ function hojasProtegidas_() {
   CFG.SOBREVENTA.DESTINOS.forEach(function (d) { hojas.push(d.hoja); });
   // La copia local de las promociones del site también.
   hojas.push(PS_ESPEJO);
+  hojas.push(K_EXC);               // excepciones de categoría
   return hojas;
 }
 

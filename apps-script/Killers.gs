@@ -37,6 +37,8 @@ var K_KAM   = 'KILLERS KAM';
 var K_ACT   = 'KILLERS ACTIVOS';
 var K_HIST  = 'KILLERS HISTORICO';
 var K_COM   = 'COMISIONES';
+var K_EXC   = 'EXCEPCIONES CATEGORIA';   // SKU publicados en la categoría equivocada en Walmart
+var ENC_K_EXC = ['SKU', 'CATEGORIA CORRECTA', 'NOTA'];
 var K_PROMO = 'PROMOCIONES';   // hoja vieja: se quita una vez
 
 var MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
@@ -320,8 +322,62 @@ function promosCategoria_() {
   return out;
 }
 
+/**
+ * Hoja EXCEPCIONES CATEGORIA: SKUs que Walmart (o el KAM) publicó en una categoría
+ * equivocada. Aquí se les corrige para comparar contra la comisión y la promoción
+ * correctas. El SKU cubre sus variantes -MSI, -MSI-2..9 y -2..9. La hoja se crea
+ * sola la primera vez, con los casos que ya detectaste; agrega los demás al final.
+ */
+var EXC_INICIALES = [
+  ['DJI-MIC3-NEG-1834', 'Fotografía', 'Publicado en Instrumentos Musicales'],
+  ['GOP-CHDHF132AT-NEG-4129', 'Fotografía', 'Publicado en Campañas'],
+  ['CAN-CAMCANREBT7-NEG-2721', 'Fotografía', 'Publicado en Bodega Aurrera'],
+  ['CAN-KP1081N--8891', 'Fotografía', 'Publicado en Oficina y Papelería'],
+  ['SKU-S2TAWT007-MOR-3021', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
+  ['JBL-VBEAM2WHTAM-BLA-5058', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
+  ['JBL-PBWIRELESSMICAM-NEG-9975', 'Audio', 'Publicado en Instrumentos Musicales'],
+  ['SKU-S2SPWU794-NEG-4509', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
+  ['SKU-S2TAWS967-ROJ-0549', 'Audio', 'Publicado en UNNAV'],
+  ['SON-CFIZCT1W-CAM-2671', 'Videojuegos', 'Publicado en UNNAV'],
+  ['SON-WHCH520BZ-NEG-5205', 'Videojuegos', 'Publicado en Audio'],
+  ['SON-CFIZVR1-BLA-7999', 'Videojuegos', 'Publicado en Celulares']
+];
+
+function excepcionesCategoria_() {
+  if (excepcionesCategoria_.cache) return excepcionesCategoria_.cache;
+  var m = {};
+  try {
+    var sh = hoja_(K_EXC, ENC_K_EXC);
+    if (prop_('EXC_CAT_V1') !== '1') {
+      if (sh.getLastRow() < 2) {
+        sh.getRange(2, 1, EXC_INICIALES.length, 3).setValues(EXC_INICIALES);
+      }
+      setProp_('EXC_CAT_V1', '1');
+    }
+    var n = sh.getLastRow();
+    if (n > 1) {
+      sh.getRange(2, 1, n - 1, 2).getValues().forEach(function (r) {
+        var k = sku_(r[0]);
+        if (k && String(r[1] || '').trim()) m[skuBase_(k)] = String(r[1]).trim();
+      });
+    }
+  } catch (e) {
+    logWarn_('KILLERS', 'No se pudo leer EXCEPCIONES CATEGORIA', { error: String(e && e.message || e) });
+  }
+  excepcionesCategoria_.cache = m;
+  return m;
+}
+
+/** Categoría corregida de un SKU ('' si no tiene excepción). */
+function catExcepcion_(sku) {
+  var m = excepcionesCategoria_();
+  return m[skuBase_(sku)] || m[sku_(sku)] || '';
+}
+
 /** Categoría (clave de COMISIONES) de un SKU según su departamento o su marca. */
 function categoriaDeSku_(pc, sku, depto) {
+  var exc = catExcepcion_(sku);
+  if (exc && pc.nombres[norm_(exc)]) return pc.nombres[norm_(exc)];
   var cat = depto ? pc.nombres[norm_(depto)] : null;
   if (cat) return cat;
   for (var j = 0; j < pc.marcas.length; j++) {
@@ -934,7 +990,7 @@ function reconstruirActivos_() {
     if (!sel) return;
     var k = sel.k;
     var r = filas.length + 2;                       // renglón en la hoja
-    var cat = k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
+    var cat = catExcepcion_(k.sku) || k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
     var pr = deducirPromo_(k, cat, com, extra);
     var promo = pr.red > 0.0001;
     if (promo) promos.push({ k: k, cat: cat, pr: pr });
@@ -1183,7 +1239,7 @@ function killersParaValidar_(tabla) {
 
   hist.concat(leerKam_(tabla)).forEach(function (k) {
     if (!k.negoc) return;
-    var cat = k.categoria || cats[k.sku] || cats[k.general] || '';
+    var cat = catExcepcion_(k.sku) || k.categoria || cats[k.sku] || cats[k.general] || '';
     var pr = deducirPromo_(k, cat, com, extra);
     var e = { precio: k.negoc, ini: k.ini, fin: k.fin, nCarga: k.nCarga,
               normal: pr.normal, com: pr.normal === '' ? '' : pr.normal - pr.redCla,
