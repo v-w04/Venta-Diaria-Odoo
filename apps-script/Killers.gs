@@ -83,7 +83,10 @@ var ENC_K_ACT = ['SKU', 'Detalles del artículo', 'PRECIO', 'Precio negociado',
 var KA = { SKU: 0, CAT: 19 };   // T "KAM" = categoría
 
 var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'PROMO CATEGORIA (puntos)', 'MARCAS (prefijo SKU)',
-                 'YA APLICADA EN EL SITE'];
+                 'YA APLICADA EN EL SITE', 'PROMO SOLO EN KILLERS'];
+// PROMO SOLO EN KILLERS: SI = la promo de la categoría solo vale para los
+// killers que da el KAM directo (ej. Videojuegos). No genera renglones de
+// promoción en KILLERS ACTIVOS ni se descuenta extra al validar ventas.
 // PROMO CATEGORIA (puntos): cuando el KAM baja la comisión a TODA una
 // categoría (ej. Cámaras y Lentes 7 → 10% pasa a 3%). Con eso, todos los SKUs
 // de esa categoría con stock (del dashboard WM_Inv) entran a KILLERS ACTIVOS.
@@ -245,6 +248,19 @@ function comisionesNormales_() {
     }
     setProp_('COMISIONES_COLS_V8', '1');
   }
+  if (prop_('COMISIONES_COLS_V9') !== '1') {
+    // Nueva columna G "PROMO SOLO EN KILLERS": se precarga SI en Videojuegos.
+    if (sh.getMaxColumns() < ENC_K_COM.length) sh.insertColumnsAfter(sh.getMaxColumns(), ENC_K_COM.length - sh.getMaxColumns());
+    sh.getRange(1, 7).setValue(ENC_K_COM[6]);
+    var n9 = sh.getLastRow();
+    if (n9 > 1) {
+      var d9 = sh.getRange(2, 1, n9 - 1, 7).getValues();
+      for (var q9 = 0; q9 < d9.length; q9++) {
+        if (norm_(d9[q9][0]) === 'VIDEOJUEGOS' && (d9[q9][6] === '' || d9[q9][6] === null)) sh.getRange(q9 + 2, 7).setValue('SI');
+      }
+    }
+    setProp_('COMISIONES_COLS_V9', '1');
+  }
   var m = {};
   var n = sh.getLastRow();
   if (n < 2) return m;
@@ -279,7 +295,7 @@ function promosCategoria_() {
   var sh = libro_().getSheetByName(K_COM);
   var out = { nombres: {}, marcas: [], cats: {} };
   if (!sh || sh.getLastRow() < 2) return out;
-  var ancho = Math.min(Math.max(sh.getLastColumn(), 5), 6);
+  var ancho = Math.min(Math.max(sh.getLastColumn(), 5), 7);
   sh.getRange(2, 1, sh.getLastRow() - 1, ancho).getValues().forEach(function (r) {
     var cat = norm_(r[0]);
     if (!cat) return;
@@ -287,7 +303,8 @@ function promosCategoria_() {
     out.cats[cat] = { nombre: String(r[0]), normal: com[cat], red: red, origen: red ? 'COMISIONES' : '',
                       // Por omisión SÍ viene aplicada en el site (ver nota de
                       // ENC_K_COM). Solo un "NO" explícito la recalcula aquí.
-                      enSite: norm_(r[5]) !== 'NO' };
+                      enSite: norm_(r[5]) !== 'NO',
+                      soloKillers: norm_(r[6]) === 'SI' };
     out.nombres[cat] = cat;
     String(r[2] || '').split(',').forEach(function (x) {
       var k = norm_(x);
@@ -396,6 +413,9 @@ function skusPromoCategoria_(pc) {
 
     var cat = categoriaDeSku_(pc, s, d.shelf);
     var ps = promos ? promoSiteDeSku_(promos, s) : null;
+    if (cat && pc.cats[cat] && pc.cats[cat].soloKillers) return;   // promo solo para killers del KAM
+    if (promos && ps && !cat && ps.cat && pc.cats[norm_(ps.cat)] && pc.cats[norm_(ps.cat)].soloKillers) return;
+
 
     if (promos) {
       if (!ps) return;                      // modo 1: solo los que el site marcó
@@ -983,10 +1003,14 @@ function reconstruirActivos_() {
       p.sku, p.nombre,
       '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
         hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
-      (p.precioPromo > 0) ? p.precioPromo :                             // CLASICA/PREMIUM CON PROMO del site
-      info.enSite ? '=C' + r :                                          // ya rebajado en el site
-        '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + info.red.toFixed(4) +
-        ')/10)*10+9,"")',                                               // D = mín − 7%, como tu hoja
+      // Regla de Luis (07/10/2026): killers y promociones se calculan SIEMPRE sobre el
+      // PRECIO MÍNIMO de Erik (el site calcula sobre el precio normal, no sirve).
+      //   · mínimo − puntos% de la promo, terminado en 9 (8,049 con 7% → 7,489), tanto en la
+      //     clásica como en la premium (-MSI) que no tenga killer vigente (los que sí tienen
+      //     killer ya traen el descuento y entran como killer, no como promoción).
+      (info.red > 0)
+        ? '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + info.red.toFixed(4) + ')/10)*10+9,"")'
+        : '=IF(ISNUMBER(C' + r + '),C' + r + ',"")',                    // D
       '',                                                               // E
       '=IF(D' + r + '="","",D' + r + '+N(E' + r + '))',                 // F PAGAN
       '=IF(AND(ISNUMBER(C' + r + '),ISNUMBER(F' + r + ')),F' + r + '/C' + r + ',"")', // G %
@@ -997,7 +1021,7 @@ function reconstruirActivos_() {
       'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
-      (p.precioPromo > 0) ? 'Precio con promo del site' : (info.enSite ? 'Ya aplicada en el site' : 'Recalculada aquí') // Y–AB
+      (info.red > 0) ? 'Mínimo − promo' : 'Mínimo' // Y–AB
     ]);
   };
 
@@ -1018,7 +1042,7 @@ function reconstruirActivos_() {
   var guardar = {};
   Object.keys(pc.cats).forEach(function (ck) {
     var i = pc.cats[ck];
-    if (i.red > 0 && i.normal !== undefined) guardar[ck] = { red: i.red, normal: i.normal, nombre: i.nombre, origen: i.origen, enSite: i.enSite };
+    if (i.red > 0 && i.normal !== undefined) guardar[ck] = { red: i.red, normal: i.normal, nombre: i.nombre, origen: i.origen, enSite: i.enSite, soloKillers: !!i.soloKillers };
   });
   setProp_('KILLERS_PROMO_CAT', JSON.stringify(guardar));
   res.promoCat = guardar;
@@ -1220,6 +1244,7 @@ function promoCategoriaDe_(killers, sku, grupo, premium) {
     var ck = killers.catSku[ll[i]];
     var p = ck && killers.promoCat[ck];
     if (!p) continue;
+    if (p.soloKillers === true) return null;   // el killer ya trae el descuento
     if (p.enSite === true) return null;
     var extra = killers.extra || MSI_EXTRA_DEF;
     return premium ? { normal: p.normal + extra, com: p.normal + extra - p.red, nombre: p.nombre }

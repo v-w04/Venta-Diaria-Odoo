@@ -28,6 +28,7 @@ function onOpen() {
       .addSubMenu(ui.createMenu('Configuración')
         .addItem('🔌 Configurar Odoo…', 'configurarOdoo')
         .addItem('🧪 Probar conexión a Odoo', 'probarOdoo')
+        .addItem('⚙️ Configurar bandas de alerta de precios…', 'configurarBandasAlerta')
         .addItem('🔑 Configurar API de Walmart…', 'configurarWalmart')
         .addItem('🧪 Probar un pedido en la API de Walmart', 'probarPedidoWalmart')
         .addItem('⏱️ Instalar / reinstalar triggers', 'instalarTriggers'))
