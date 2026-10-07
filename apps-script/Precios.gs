@@ -331,6 +331,17 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   //    mínimo ajustado = mínimo × (1 − comisión normal) ÷ (1 − comisión promo)
   //    El killer (paso 1) es precio exacto y no se combina con nada.
   var premium = tipo === 'PREMIUM';
+  // 2a) Promoción capturada en el site para ese SKU (APLICA = SI): el mínimo NO la trae,
+  //     así que la venta se valida contra mínimo − puntos de la promo.
+  var psw = null;
+  try { psw = promoSiteDeSku_(promosSiteMem_(), s); } catch (e) { psw = null; }
+  if (psw && psw.red > 0) {
+    var minS = min * (1 - psw.red);
+    if (J >= minS - CFG.TOLERANCIA_PRECIO) {
+      return [min, base, tipo, origen, 'PROMOCION', dif, pct, 'PROMOCION',
+              nota('Promoción del site −' + Math.round(psw.red * 1000) / 10 + '% · mínimo ajustado $' + Math.round(minS))];
+    }
+  }
   var p = promoQueAplica_(killers, s, fecha, grupo, premium);
   // Rebaja de comisión BASE cuya categoría ya está aplicada en el site: el
   // mínimo ya viene rebajado, no se vuelve a ajustar (sí la de SOLO MSI).
@@ -346,6 +357,14 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   }
 
   return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', notaAsig];
+}
+
+/** Lista de promociones del site, leída una sola vez por corrida. */
+function promosSiteMem_() {
+  if (promosSiteMem_.v === undefined) {
+    try { promosSiteMem_.v = promosDelSite_(); } catch (e) { promosSiteMem_.v = null; }
+  }
+  return promosSiteMem_.v;
 }
 
 // ── SKU ASIGNADOS ─────────────────────────────────────────────────────────

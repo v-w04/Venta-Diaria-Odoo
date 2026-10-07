@@ -1074,7 +1074,7 @@ function reconstruirActivos_() {
       '', '', '',                                                       // I J K
       fin, '', fin === '' ? '' : Math.round((fin + extra) * 1000) / 1000, // L M N
       '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
-      'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
+      'SI', catExcepcion_(p.sku) ? info.nombre : (p.depto || info.nombre), // S T (categoría; con excepción, la corregida)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
       (info.red > 0) ? 'Mínimo − promo' : 'Mínimo' // Y–AB
@@ -1300,7 +1300,11 @@ function promoCategoriaDe_(killers, sku, grupo, premium) {
     var ck = killers.catSku[ll[i]];
     var p = ck && killers.promoCat[ck];
     if (!p) continue;
-    if (p.soloKillers === true) return null;   // el killer ya trae el descuento
+    if (p.soloKillers === true) {
+      // Videojuegos: la promo solo vale para los killers premium del KAM. Su venta
+      // se valida contra mínimo − puntos; la clásica no tiene promoción.
+      return premium && p.red > 0 ? { normal: p.red, com: 0, nombre: p.nombre } : null;
+    }
     if (p.enSite === true) return null;
     var extra = killers.extra || MSI_EXTRA_DEF;
     return premium ? { normal: p.normal + extra, com: p.normal + extra - p.red, nombre: p.nombre }
