@@ -190,6 +190,7 @@ function sincronizarKillersSite_(forzar) {
     var ahora = Date.now();
     if (!forzar && ahora - Number(prop_(KS_REVISADO, '0')) < KS_CADA_MS) return { estado: 'reciente' };
     setProp_(KS_REVISADO, String(ahora));
+    sincronizarBajoMinimo_();            // copia de "Killers bajo minimo" (Site Sheet) y aviso si cambió
 
     var s = killersDelSite_();
     if (!s) return { estado: 'sin_lectura' };

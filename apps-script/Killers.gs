@@ -37,8 +37,11 @@ var K_KAM   = 'KILLERS KAM';
 var K_ACT   = 'KILLERS ACTIVOS';
 var K_HIST  = 'KILLERS HISTORICO';
 var K_COM   = 'COMISIONES';
-var K_EXC   = 'EXCEPCIONES CATEGORIA';   // SKU publicados en la categoría equivocada en Walmart
-var ENC_K_EXC = ['SKU', 'CATEGORIA CORRECTA', 'NOTA'];
+var K_EXC   = 'EXCEPCIONES CATEGORIA';   // SKUs en promoción del site cuya categoría en Walmart no coincide (solo informativa)
+var ENC_K_EXC = ['SKU', 'CATEGORIA EN WALMART', 'CATEGORIA EN LA PROMO (SITE)', 'NOTA'];
+var K_EXCL  = 'KILLERS EXCLUIDOS';       // SKUs exactos que NO deben entrar a KILLERS ACTIVOS (los escribe Luis)
+var ENC_K_EXCL = ['SKU', 'MOTIVO', 'HASTA (opcional)'];
+var K_BAJO  = 'KILLERS BAJO MINIMO';     // killers cuyo "nos pagan" no cubre el mínimo (se descartan de ACTIVOS)
 var K_PROMO = 'PROMOCIONES';   // hoja vieja: se quita una vez
 
 var MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
@@ -263,6 +266,22 @@ function comisionesNormales_() {
     }
     setProp_('COMISIONES_COLS_V9', '1');
   }
+  if (prop_('COMISIONES_ALIAS_V10') !== '1') {
+    // "Accesorios de Fotografía" cuenta como Cámaras y Lentes (el KAM da la promo a ambas).
+    var n10 = sh.getLastRow();
+    if (n10 > 1) {
+      var d10 = sh.getRange(2, 1, n10 - 1, 3).getValues();
+      for (var q10 = 0; q10 < d10.length; q10++) {
+        if (norm_(d10[q10][0]) === 'CAMARAS Y LENTES') {
+          var otros = String(d10[q10][2] || '');
+          if (norm_(otros).indexOf('ACCESORIOS DE FOTOGRAFIA') < 0) {
+            sh.getRange(q10 + 2, 3).setValue(otros ? otros + ', Accesorios de Fotografia' : 'Accesorios de Fotografia');
+          }
+        }
+      }
+    }
+    setProp_('COMISIONES_ALIAS_V10', '1');
+  }
   var m = {};
   var n = sh.getLastRow();
   if (n < 2) return m;
@@ -323,61 +342,77 @@ function promosCategoria_() {
 }
 
 /**
- * Hoja EXCEPCIONES CATEGORIA: SKUs que Walmart (o el KAM) publicó en una categoría
- * equivocada. Aquí se les corrige para comparar contra la comisión y la promoción
- * correctas. El SKU cubre sus variantes -MSI, -MSI-2..9 y -2..9. La hoja se crea
- * sola la primera vez, con los casos que ya detectaste; agrega los demás al final.
+ * La promoción del site solo vale si Walmart tiene el SKU en la MISMA categoría en
+ * que se capturó la promoción (así sabemos que Walmart sí da el descuento de
+ * comisión). Si no coincide, NO se fuerza: no entra a KILLERS ACTIVOS como promoción
+ * ni se descuenta en las comparaciones. Esos SKUs se listan en EXCEPCIONES CATEGORIA.
+ * Un killer del KAM se queda como viene, aunque su categoría esté mal.
  */
-var EXC_INICIALES = [
-  ['DJI-MIC3-NEG-1834', 'Fotografía', 'Publicado en Instrumentos Musicales'],
-  ['GOP-CHDHF132AT-NEG-4129', 'Fotografía', 'Publicado en Campañas'],
-  ['CAN-CAMCANREBT7-NEG-2721', 'Fotografía', 'Publicado en Bodega Aurrera'],
-  ['CAN-KP1081N--8891', 'Fotografía', 'Publicado en Oficina y Papelería'],
-  ['SKU-S2TAWT007-MOR-3021', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
-  ['JBL-VBEAM2WHTAM-BLA-5058', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
-  ['JBL-PBWIRELESSMICAM-NEG-9975', 'Audio', 'Publicado en Instrumentos Musicales'],
-  ['SKU-S2SPWU794-NEG-4509', 'Audio', 'Publicado en Farmacia y Cuidado de la Salud'],
-  ['SKU-S2TAWS967-ROJ-0549', 'Audio', 'Publicado en UNNAV'],
-  ['SON-CFIZCT1W-CAM-2671', 'Videojuegos', 'Publicado en UNNAV'],
-  ['SON-WHCH520BZ-NEG-5205', 'Videojuegos', 'Publicado en Audio'],
-  ['SON-CFIZVR1-BLA-7999', 'Videojuegos', 'Publicado en Celulares']
-];
-
-function excepcionesCategoria_() {
-  if (excepcionesCategoria_.cache) return excepcionesCategoria_.cache;
-  var m = {};
-  try {
-    var sh = hoja_(K_EXC, ENC_K_EXC);
-    if (prop_('EXC_CAT_V1') !== '1') {
-      if (sh.getLastRow() < 2) {
-        sh.getRange(2, 1, EXC_INICIALES.length, 3).setValues(EXC_INICIALES);
-      }
-      setProp_('EXC_CAT_V1', '1');
-    }
-    var n = sh.getLastRow();
-    if (n > 1) {
-      sh.getRange(2, 1, n - 1, 2).getValues().forEach(function (r) {
-        var k = sku_(r[0]);
-        if (k && String(r[1] || '').trim()) m[skuBase_(k)] = String(r[1]).trim();
-      });
-    }
-  } catch (e) {
-    logWarn_('KILLERS', 'No se pudo leer EXCEPCIONES CATEGORIA', { error: String(e && e.message || e) });
+function shelfDeSku_(sku) {
+  if (!shelfDeSku_.mapa) {
+    var m = {};
+    try { leerDashboard_().forEach(function (d) { if (d.shelf) m[d.sku] = d.shelf; }); } catch (e) { /* sin dashboard */ }
+    shelfDeSku_.mapa = m;
   }
-  excepcionesCategoria_.cache = m;
-  return m;
+  return shelfDeSku_.mapa[sku_(sku)] || '';
 }
 
-/** Categoría corregida de un SKU ('' si no tiene excepción). */
-function catExcepcion_(sku) {
-  var m = excepcionesCategoria_();
-  return m[skuBase_(sku)] || m[sku_(sku)] || '';
+/**
+ * ¿La promoción del site de este SKU vale? → { ps, motivo }. motivo '' = vale.
+ *   1) La categoría del SKU en Walmart debe ser la de la promo (con sus nombres alternos de COMISIONES,
+ *      p. ej. Fotografía y Accesorios de Fotografía cuentan como Cámaras y Lentes).
+ *   2) Si el site lo marca "mal_capturada" (Walmart cobró distinto a lo esperado con la promo),
+ *      no se fuerza. Excepción: Walmart cobró en una categoría equivalente a la de la promo con
+ *      otro nombre (Accesorios de Fotografía), que el site marca de más.
+ */
+function promoSiteEval_(promos, pc, sku, depto) {
+  var ps = promoSiteDeSku_(promos, sku);
+  if (!ps) return { ps: null, motivo: '' };
+  if (!pc) return { ps: ps, motivo: 'Sin categorías para verificarlo' };
+  var a = pc.nombres[norm_(ps.cat)];
+  var shelf = shelfDeSku_(sku) || depto || '';
+  var b = pc.nombres[norm_(shelf)];
+  if (!(a && b && a === b)) {
+    return { ps: ps, motivo: 'Walmart lo tiene en "' + (shelf || 'sin categoría') + '", no en la categoría de la promo' };
+  }
+  if (ps.revision === 'mal_capturada') {
+    var c = ps.catCobra ? pc.nombres[norm_(ps.catCobra)] : null;
+    var equivalente = c && c === a && norm_(ps.catCobra) !== norm_(ps.cat);
+    if (!equivalente) {
+      return { ps: ps, motivo: 'El site lo marca mal capturada: Walmart cobró ' +
+               (ps.cobro === '' ? '?' : ps.cobro + '%') + (ps.catCobra ? ' en ' + ps.catCobra : '') };
+    }
+  }
+  return { ps: ps, motivo: '' };
+}
+
+/** Promoción del site de ese SKU si vale; si no, null. */
+function promoSiteQueAplica_(promos, pc, sku, depto) {
+  var ev = promoSiteEval_(promos, pc, sku, depto);
+  return ev.motivo ? null : ev.ps;
+}
+
+/** Hoja EXCEPCIONES CATEGORIA: se reescribe en cada armado de KILLERS ACTIVOS. Solo informativa. */
+function escribirExcepcionesPromo_(lista) {
+  try {
+    var sh = hoja_(K_EXC, ENC_K_EXC);
+    if (sh.getMaxColumns() < ENC_K_EXC.length) sh.insertColumnsAfter(sh.getMaxColumns(), ENC_K_EXC.length - sh.getMaxColumns());
+    var filas = lista.slice().sort(function (a, b) { return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0; })
+      .map(function (p) {
+        return [p.sku, p.shelf || '(sin categoría en Walmart)', p.promoCat || '',
+                'No se carga como promoción. ' + (p.motivo || '')];
+      });
+    if (sh.getMaxRows() < filas.length + 1) sh.insertRowsAfter(sh.getMaxRows(), filas.length + 1 - sh.getMaxRows());
+    sh.getRange(1, 1, 1, ENC_K_EXC.length).setValues([ENC_K_EXC]).setFontWeight('bold');
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), ENC_K_EXC.length)).clearContent();
+    if (filas.length) sh.getRange(2, 1, filas.length, ENC_K_EXC.length).setValues(filas);
+  } catch (e) {
+    logWarn_('KILLERS', 'No se pudo escribir EXCEPCIONES CATEGORIA', { error: String(e && e.message || e) });
+  }
 }
 
 /** Categoría (clave de COMISIONES) de un SKU según su departamento o su marca. */
 function categoriaDeSku_(pc, sku, depto) {
-  var exc = catExcepcion_(sku);
-  if (exc && pc.nombres[norm_(exc)]) return pc.nombres[norm_(exc)];
   var cat = depto ? pc.nombres[norm_(depto)] : null;
   if (cat) return cat;
   for (var j = 0; j < pc.marcas.length; j++) {
@@ -397,13 +432,14 @@ function leerDashboard_() {
     var m = mapaColumnas_(datos[0]);
     var c = function (k) { return m[norm_(k)]; };
     var iSku = c('sku'), iShelf = c('shelf'), iNom = c('productName'),
-        iTot = c('stockTotal'), iWfs = c('wfsDisponible');
+        iTot = c('stockTotal'), iWfs = c('wfsDisponible'), iTipo = c('productType');
     if (iSku === undefined || iShelf === undefined) throw new Error('El dashboard no trae sku/shelf');
     var numero = function (v) { return v instanceof Date ? 0 : num_(v); };   // 0 con formato fecha
     for (var i = 1; i < datos.length; i++) {
       var f = datos[i], s = sku_(f[iSku]);
       if (!s) continue;
-      out.push({ sku: s, shelf: String(f[iShelf] || ''), nombre: iNom === undefined ? '' : String(f[iNom] || ''),
+      out.push({ sku: s, shelf: String(f[iShelf] || ''), tipo: iTipo === undefined ? '' : String(f[iTipo] || ''),
+                 nombre: iNom === undefined ? '' : String(f[iNom] || ''),
                  tot: iTot === undefined ? 0 : numero(f[iTot]), wfs: iWfs === undefined ? 0 : numero(f[iWfs]) });
     }
   }
@@ -462,13 +498,18 @@ function skusPromoCategoria_(pc) {
   try { st = stockOdoo_(); }
   catch (e) { logWarn_('KILLERS', 'No se pudo leer el stock de Odoo de Site Sheet; se usa el del dashboard', { error: String(e && e.message || e) }); }
 
-  var out = [], conStock = 0;
+  var out = [], conStock = 0, mism = [];
   leerDashboard_().forEach(function (d) {
     var s = d.sku;
     if (skuIgnorado_(s) || /-(OB|OPENBOX)$/.test(s)) return;
 
     var cat = categoriaDeSku_(pc, s, d.shelf);
     var ps = promos ? promoSiteDeSku_(promos, s) : null;
+    // La promo del site solo cuenta si Walmart lo tiene en la misma categoría de la promo.
+    if (promos && ps) {
+      var ev = promoSiteEval_(promos, pc, s, d.shelf);
+      if (ev.motivo) { mism.push({ sku: s, shelf: d.shelf || '', promoCat: ps.cat || '', motivo: ev.motivo }); return; }
+    }
     if (cat && pc.cats[cat] && pc.cats[cat].soloKillers) return;   // promo solo para killers del KAM
     if (promos && ps && !cat && ps.cat && pc.cats[norm_(ps.cat)] && pc.cats[norm_(ps.cat)].soloKillers) return;
 
@@ -494,6 +535,7 @@ function skusPromoCategoria_(pc) {
     var precioPromo = ps ? (tipoPublicacion_(s) === 'PREMIUM' ? ps.preP : ps.claP) : '';
     out.push({ sku: s, nombre: d.nombre, cat: cat, stock: tot, depto: d.shelf, precioPromo: precioPromo });
   });
+  skusPromoCategoria_.mism = mism;
 
   // reconstruirActivos_ corre cada hora desde el trigger: el LOG solo lleva
   // renglón cuando el número CAMBIA, más uno al día. Igual que la sobreventa.
@@ -957,6 +999,11 @@ function reconstruirActivos_() {
   });
   kam.forEach(function (k) { (porSku[k.sku] = porSku[k.sku] || []).push(k); });
 
+  // KILLERS EXCLUIDOS: SKUs exactos que Luis pidió no contemplar.
+  var excluidos = {}, nExcl = 0;
+  try { excluidos = killersExcluidos_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer KILLERS EXCLUIDOS', { error: String(e && e.message || e) }); }
+  Object.keys(excluidos).forEach(function (s) { if (porSku[s]) { delete porSku[s]; nExcl++; } });
+
   var previos = {};
   var n0 = ultimaFilaColA_(sh);
   if (n0 > 1) sh.getRange(2, 1, n0 - 1, 1).getValues().forEach(function (r) { previos[sku_(r[0])] = true; });
@@ -981,6 +1028,20 @@ function reconstruirActivos_() {
     var x = rangoQueAplica_(porSku[sku], ahora);
     if (x) (x.estado === 'VIGENTE' ? vigentes : porIniciar).push(sku);
   });
+  // KILLERS BAJO MINIMO (hoja "Killers bajo minimo" de Site Sheet, ya calculada allá): si el
+  // % PERDIDA del killer es mayor al tope (3%) NO entra a ACTIVOS. Comparación por SKU exacto.
+  var bm = null, nBajo = 0;
+  try { bm = bajoMinimoDelSite_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Killers bajo minimo', { error: String(e && e.message || e) }); }
+  var sinBajo = function (sku) {
+    var e = bm && bm.skus[sku];
+    if (e && e.perdida > bm.tope + 0.0001) { nBajo++; return false; }
+    return true;
+  };
+  vigentes = vigentes.filter(sinBajo);
+  porIniciar = porIniciar.filter(sinBajo);
+  res.bajoMinimo = nBajo;
+  res.excluidos = nExcl;
+
   var conKiller = {};                    // solo killers VIGENTES tapan la promo
   vigentes.forEach(function (sku) { conKiller[sku] = true; });
 
@@ -990,7 +1051,7 @@ function reconstruirActivos_() {
     if (!sel) return;
     var k = sel.k;
     var r = filas.length + 2;                       // renglón en la hoja
-    var cat = catExcepcion_(k.sku) || k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
+    var cat = k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
     var pr = deducirPromo_(k, cat, com, extra);
     var promo = pr.red > 0.0001;
     if (promo) promos.push({ k: k, cat: cat, pr: pr });
@@ -1074,7 +1135,7 @@ function reconstruirActivos_() {
       '', '', '',                                                       // I J K
       fin, '', fin === '' ? '' : Math.round((fin + extra) * 1000) / 1000, // L M N
       '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
-      'SI', catExcepcion_(p.sku) ? info.nombre : (p.depto || info.nombre), // S T (categoría; con excepción, la corregida)
+      'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
       (info.red > 0) ? 'Mínimo − promo' : 'Mínimo' // Y–AB
@@ -1107,6 +1168,7 @@ function reconstruirActivos_() {
   res.promoCategoria = 0;
   try {
     extraCat = skusPromoCategoria_(pc).filter(function (p) { return !conKiller[p.sku]; });
+    escribirExcepcionesPromo_(skusPromoCategoria_.mism || []);
   } catch (e) {
     logWarn_('KILLERS', 'No se pudo leer el dashboard de Walmart (promoción de categoría)', { error: String(e && e.message || e) });
   }
@@ -1130,6 +1192,41 @@ function reconstruirActivos_() {
   res.salieron = Object.keys(previos).filter(function (k) { return k && !ahoraSkus[k]; }).length;
   setProp_('KILLERS_ACTIVOS_N', String(filas.length));
   return res;
+}
+
+/**
+ * KILLERS EXCLUIDOS: SKUs EXACTOS (solo el que se escribe, no sus variantes) que no deben
+ * entrar a KILLERS ACTIVOS aunque estén activos en el site (p. ej. Walmart pidió precio base).
+ * HASTA vacío = excluido hasta que se borre el renglón; con fecha, vuelve solo al día siguiente.
+ * Devuelve { SKU: true }. La primera vez se precargan los dos HP del 07/10/2026.
+ */
+function killersExcluidos_() {
+  var sh = hoja_(K_EXCL, ENC_K_EXCL);
+  if (prop_('KILLERS_EXCL_V1') !== '1') {
+    var ini = [['HP-14DQ6015DX-ROS-1222-MSI', 'Walmart pide precio base'],
+               ['HP-14-DQ6105DX-ROS-7817-MSI', 'Walmart pide precio base']];
+    var ya = {};
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) { ya[sku_(r[0])] = true; });   // col-fija: la hoja la creo yo arriba
+    ini.forEach(function (x) { if (!ya[sku_(x[0])]) sh.appendRow([x[0], x[1], '']); });
+    sh.setFrozenRows(1);
+    setProp_('KILLERS_EXCL_V1', '1');
+  }
+  var out = {};
+  if (sh.getLastRow() < 2) return out;
+  var ahora = Date.now();
+  var datos = sh.getRange(1, 1, sh.getLastRow(), Math.max(sh.getLastColumn(), 1)).getValues();
+  var mc = mapaColumnas_(datos[0]), cS = mc[norm_('SKU')], cH = mc[norm_('HASTA (opcional)')];
+  if (cH === undefined) cH = mc[norm_('HASTA')];
+  if (cS === undefined) { logWarn_('KILLERS', 'KILLERS EXCLUIDOS no trae la columna SKU', { encabezados: datos[0] }); return out; }
+  datos.slice(1).forEach(function (r) {
+    var s = sku_(r[cS]);
+    if (!s) return;
+    var hv = cH === undefined ? '' : r[cH];
+    var h = hv instanceof Date ? hv : (String(hv || '').trim() ? fechaK_(hv) : '');
+    if (h instanceof Date && h.getTime() + 24 * 3600 * 1000 < ahora) return;   // ya venció la exclusión
+    out[s] = true;
+  });
+  return out;
 }
 
 /** Llave con la que C busca el mínimo en PRECIOS ERIK (misma regla que minimoDe_). */
@@ -1239,7 +1336,7 @@ function killersParaValidar_(tabla) {
 
   hist.concat(leerKam_(tabla)).forEach(function (k) {
     if (!k.negoc) return;
-    var cat = catExcepcion_(k.sku) || k.categoria || cats[k.sku] || cats[k.general] || '';
+    var cat = k.categoria || cats[k.sku] || cats[k.general] || '';
     var pr = deducirPromo_(k, cat, com, extra);
     var e = { precio: k.negoc, ini: k.ini, fin: k.fin, nCarga: k.nCarga,
               normal: pr.normal, com: pr.normal === '' ? '' : pr.normal - pr.redCla,

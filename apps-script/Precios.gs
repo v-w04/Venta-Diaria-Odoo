@@ -334,7 +334,7 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   // 2a) Promoción capturada en el site para ese SKU (APLICA = SI): el mínimo NO la trae,
   //     así que la venta se valida contra mínimo − puntos de la promo.
   var psw = null;
-  try { psw = promoSiteDeSku_(promosSiteMem_(), s); } catch (e) { psw = null; }
+  try { psw = promoSiteQueAplica_(promosSiteMem_(), promosCatMem_(), s, ''); } catch (e) { psw = null; }
   if (psw && psw.red > 0) {
     var minS = min * (1 - psw.red);
     if (J >= minS - CFG.TOLERANCIA_PRECIO) {
@@ -365,6 +365,13 @@ function promosSiteMem_() {
     try { promosSiteMem_.v = promosDelSite_(); } catch (e) { promosSiteMem_.v = null; }
   }
   return promosSiteMem_.v;
+}
+
+function promosCatMem_() {
+  if (promosCatMem_.v === undefined) {
+    try { promosCatMem_.v = promosCategoria_(); } catch (e) { promosCatMem_.v = null; }
+  }
+  return promosCatMem_.v;
 }
 
 // ── SKU ASIGNADOS ─────────────────────────────────────────────────────────

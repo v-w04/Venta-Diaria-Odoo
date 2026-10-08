@@ -82,7 +82,7 @@ function compararWalmartAuto_() {
  * 0 si no le toca promoción.
  */
 function cwPuntosPromo_(sku, kam, promos, pc) {
-  var ps = promos ? promoSiteDeSku_(promos, sku) : null;
+  var ps = promos ? promoSiteQueAplica_(promos, pc, sku, kam) : null;
   if (ps && ps.red > 0) return ps.red;
   if (pc && tipoPublicacion_(sku) === 'PREMIUM') {
     var ck = categoriaDeSku_(pc, sku, kam);
@@ -132,7 +132,7 @@ function compararWalmart_() {
     // Promoción: el mínimo aplicable ya trae el descuento de comisión = la Carga (mín − puntos%).
     if (promo && min > 0 && carga > 0) min = carga;
     // Killer que además trae promoción (site o Videojuegos): se compara contra mínimo − puntos.
-    var kamCat = catExcepcion_(sku) || (xK === undefined ? '' : f[xK]);
+    var kamCat = xK === undefined ? '' : f[xK];
     var red = (!promo && min > 0) ? cwPuntosPromo_(sku, kamCat, promos, pc) : 0;
     if (red > 0) min = min * (1 - red);
     var cupon = xE === undefined ? 0 : num_(f[xE]);

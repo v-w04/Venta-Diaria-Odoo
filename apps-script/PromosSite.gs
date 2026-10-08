@@ -62,7 +62,10 @@ var PS_ALIAS = {
   // Precio ya rebajado que genera el site con la comisión final (06/10/2026):
   // es el que se publica en los SKUs de promoción de categoría.
   CLACON:     ['CLASICA CON PROMO'],
-  PRECON:     ['PREMIUM CON PROMO']
+  PRECON:     ['PREMIUM CON PROMO'],
+  // Lo que Walmart REALMENTE cobró por ese SKU (JSON del site): cat_cobra, cobro (%) y
+  // revision ('cuadra', 'sin_ventas', 'cobra_menos', 'mal_capturada'). (07/10/2026)
+  WCR:        ['WCR']
 };
 
 /**
@@ -201,7 +204,7 @@ function psLeerHoja_() {
       iNor = col('NORMAL'), iRed = col('RED'), iFin = col('FINAL'),
       iApl = col('APLICA'), iEnc = col('ENCONTRADO'),
       iMinC = col('MINCLA'), iMinP = col('MINPRE'),
-      iClaP = col('CLACON'), iPreP = col('PRECON');
+      iClaP = col('CLACON'), iPreP = col('PRECON'), iWcr = col('WCR');
 
   var datos = t.datos;
   var skus = {}, n = 0, noAplican = 0;
@@ -221,7 +224,12 @@ function psLeerHoja_() {
     if (iApl >= 0 && esNo(f[iApl]))  { noAplican++; return; }
     if (iEnc >= 0 && esNo(f[iEnc]))  { noAplican++; return; }
 
+    var wcr = {};
+    try { if (iWcr >= 0 && f[iWcr]) wcr = JSON.parse(String(f[iWcr])) || {}; } catch (e) { wcr = {}; }
     var info = {
+      revision: String(wcr.revision || ''),
+      catCobra: String(wcr.cat_cobra || ''),
+      cobro:    wcr.cobro === null || wcr.cobro === undefined ? '' : Number(wcr.cobro),
       cat:    iCat >= 0 ? String(f[iCat] || '') : '',
       nombre: iNom >= 0 ? String(f[iNom] || '') : '',
       normal: iNor >= 0 ? psPct_(f[iNor]) : '',

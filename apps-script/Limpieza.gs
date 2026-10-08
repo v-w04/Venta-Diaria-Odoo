@@ -26,6 +26,8 @@ function hojasProtegidas_() {
   // La copia local de las promociones del site también.
   hojas.push(PS_ESPEJO);
   hojas.push(K_EXC);               // excepciones de categoría
+  hojas.push(K_EXCL, K_BAJO);      // killers excluidos (manual) y killers bajo mínimo
+  hojas.push(CP_HOJA, CP_TIPOS);   // carga de promociones para el site
   return hojas;
 }
 
