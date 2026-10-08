@@ -27,6 +27,7 @@ function hojasProtegidas_() {
   hojas.push(PS_ESPEJO);
   hojas.push(K_EXC);               // excepciones de categoría
   hojas.push(K_EXCL, K_BAJO);      // killers excluidos (manual) y killers bajo mínimo
+  hojas.push(ORG_INDICE, ORG_GUIA);  // índice y guía del menú (Organizar.gs)
   hojas.push(CP_HOJA, CP_TIPOS);   // carga de promociones para el site
   return hojas;
 }

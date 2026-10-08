@@ -25,6 +25,7 @@ function onOpen() {
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')
       .addItem('🩺 Diagnóstico', 'diagnostico')
       .addItem('🧹 Limpiar hojas que no uso…', 'limpiarHojas')
+      .addItem('🗂️ Ordenar hojas e índice', 'orgOrdenar')
       .addSeparator()
       .addSubMenu(ui.createMenu('Configuración')
         .addItem('🔌 Configurar Odoo…', 'configurarOdoo')
