@@ -102,15 +102,15 @@ function orgNorm_(t) {
     .toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
-/** Reintenta etapas que Sheets agota por tiempo (4 intentos, 8 s × n). Otros errores salen de una vez. */
+/** Reintenta etapas que Sheets agota por tiempo (3 intentos, 5 s × n). Otros errores salen de una vez. */
 function orgReintentar_(fn) {
   var ultimo;
-  for (var i = 1; i <= 4; i++) {
+  for (var i = 1; i <= 3; i++) {
     try { return fn(); }
     catch (e) {
       ultimo = e;
       if (!/tiempo|timed? ?out|agot|servicio hojas|service/i.test(String(e && e.message || e))) throw e;
-      Utilities.sleep(10000 * i);
+      Utilities.sleep(5000 * i);
     }
   }
   throw ultimo;
@@ -191,93 +191,102 @@ function orgFormatosHoja_(h) {
   return total;
 }
 
-/** Menú: ordena y avisa. */
+/** Menú: ordena por etapas (cada una con su reintento) y avisa. Se puede repetir: retoma donde se quedó. */
 function orgOrdenar() {
   var ui = SpreadsheetApp.getUi();
-  var avisos = [], r = null;
-  try { r = orgAplicar_(true); } catch (e) { avisos.push('Orden/índice: ' + e.message); }
-  if (!r) {
-    ui.alert('🗂️ Ordenar hojas', 'No terminó:\n  ' + avisos.join('\n  ') +
-      '\n\nEs Sheets ocupado (corridas automáticas). Espera 2 minutos sin tocar el libro y vuelve a correrlo: retoma donde se quedó.', ui.ButtonSet.OK);
-    return;
-  }
-  var falt = (orgFormatos_.fallas || []);
-  if (falt.length) avisos.push('Formatos pendientes en: ' + falt.join(', ') + ' (vuelve a correrlo y los termina)');
-  ui.alert('🗂️ Libro ordenado',
-    r.ordenadas + ' hojas con color y orden.\n' +
+  var r = orgAplicar_(true);
+  var txt = r.ordenadas + ' hojas con color y orden.\n' +
     r.encabezados + ' encabezados unificados.\n' +
     r.formatos + ' columnas de precio/fecha con formato unificado.\n' +
     'Índice: hoja "' + ORG_INDICE + '" (la primera).\n' +
     (r.sinClasificar.length
       ? '\nSIN CLASIFICAR (no están en el registro, las dejé donde estaban):\n  ' + r.sinClasificar.join('\n  ')
-      : '\nNo quedó ninguna hoja sin clasificar.') +
-    (avisos.length ? '\n\n⚠ ' + avisos.join('\n⚠ ') : ''),
-    ui.ButtonSet.OK);
+      : '\nNo quedó ninguna hoja sin clasificar.');
+  if (r.fallas.length) {
+    txt += '\n\n⚠ Quedó pendiente (Sheets ocupado por las corridas automáticas):\n  ' + r.fallas.join('\n  ') +
+      '\nEspera 2 minutos sin tocar el libro y vuelve a correr "Ordenar hojas": retoma lo que falta.';
+  }
+  ui.alert(r.fallas.length ? '🗂️ Libro ordenado (incompleto)' : '🗂️ Libro ordenado', txt, ui.ButtonSet.OK);
 }
 
 function orgAplicar_(completo) {
   var ss = SpreadsheetApp.getActive();
-  var hojas = ss.getSheets();
-  var porNombre = {};
-  hojas.forEach(function (h) { porNombre[h.getName()] = h; });
+  var resumen = { ordenadas: 0, encabezados: 0, formatos: 0, sinClasificar: [], fallas: [] };
+  var t0 = new Date().getTime();
+  var ctx = {};
 
-  var reg = {};
-  ORG_HOJAS.forEach(function (f) { reg[f[0]] = { grupo: f[1], desc: f[2], act: f[3] }; });
+  var etapa = function (nombre, fn) {
+    if (new Date().getTime() - t0 > 270 * 1000) { resumen.fallas.push(nombre + ' (sin tiempo)'); return false; }
+    try { orgReintentar_(fn); return true; }
+    catch (e) { resumen.fallas.push(nombre + ': ' + String(e && e.message || e).substring(0, 80)); return false; }
+  };
+  var leer = function () {
+    ctx.hojas = ss.getSheets();
+    ctx.por = {};
+    ctx.hojas.forEach(function (h) { ctx.por[h.getName()] = h; });
+    ctx.reg = {};
+    ORG_HOJAS.forEach(function (f) { ctx.reg[f[0]] = { grupo: f[1], desc: f[2], act: f[3] }; });
+    ctx.ocultas = []; ctx.sinClas = [];
+    ctx.hojas.forEach(function (h) {
+      var n = h.getName();
+      if (n === ORG_INDICE || n === ORG_GUIA || ctx.reg[n]) return;
+      if (orgGrupoOculta_(n) || h.isSheetHidden()) { ctx.ocultas.push(n); return; }
+      ctx.sinClas.push(n);
+    });
+    ctx.ocultas.sort();
+    resumen.sinClasificar = ctx.sinClas;
+  };
 
-  var ocultas = [], sinClas = [];
-  hojas.forEach(function (h) {
-    var n = h.getName();
-    if (n === ORG_INDICE || n === ORG_GUIA || reg[n]) return;
-    if (orgGrupoOculta_(n) || h.isSheetHidden()) { ocultas.push(n); return; }
-    sinClas.push(n);
+  if (!etapa('Leer libro', leer)) return resumen;
+  etapa('Hoja Guía del menú', function () { orgGuia_(ss); });
+  etapa('Hoja Índice (crear)', function () { if (!ss.getSheetByName(ORG_INDICE)) ss.insertSheet(ORG_INDICE); });
+  etapa('Leer libro (2)', leer);
+
+  etapa('Orden y colores', function () {
+    var deseado = [ORG_INDICE];
+    ORG_HOJAS.forEach(function (f) { if (ctx.por[f[0]]) deseado.push(f[0]); });
+    ctx.sinClas.forEach(function (n) { deseado.push(n); });
+    ctx.ocultas.forEach(function (n) { deseado.push(n); });
+    var cont = 0;
+    deseado.forEach(function (n, i) {
+      var h = ctx.por[n];
+      if (!h || h.isSheetHidden()) return;
+      if (h.getIndex() !== i + 1) { ss.setActiveSheet(h); ss.moveActiveSheet(i + 1); }
+    });
+    deseado.forEach(function (n) {
+      var h = ctx.por[n];
+      if (!h) return;
+      var c = null;
+      if (n === ORG_INDICE) c = '#202124';
+      else if (ctx.reg[n]) c = ORG_GRUPOS[ctx.reg[n].grupo].color;
+      else if (ctx.ocultas.indexOf(n) !== -1) c = ORG_GRUPOS.OCULTAS.color;
+      try { h.setTabColor(c); } catch (e) {}
+      cont++;
+    });
+    resumen.ordenadas = cont;
+    if (ctx.por[ORG_INDICE]) ss.setActiveSheet(ctx.por[ORG_INDICE]);
+    PropertiesService.getScriptProperties().setProperty(ORG_PROP_HUELLA, deseado.join('|'));
   });
 
-  var ind = porNombre[ORG_INDICE] || ss.insertSheet(ORG_INDICE);
-  porNombre[ORG_INDICE] = ind;
-  if (!porNombre[ORG_GUIA]) porNombre[ORG_GUIA] = ss.insertSheet(ORG_GUIA);
-
-  var deseado = [ORG_INDICE];
-  ORG_HOJAS.forEach(function (f) { if (porNombre[f[0]]) deseado.push(f[0]); });
-  sinClas.forEach(function (n) { deseado.push(n); });
-  ocultas.sort().forEach(function (n) { deseado.push(n); });
-
-  var resumen = { ordenadas: 0, encabezados: 0, formatos: 0, sinClasificar: sinClas };
-
-  deseado.forEach(function (n, i) {
-    var h = porNombre[n];
-    if (!h || h.isSheetHidden()) return;
-    if (h.getIndex() !== i + 1) {
-      orgReintentar_(function () { ss.setActiveSheet(h); ss.moveActiveSheet(i + 1); });
-      SpreadsheetApp.flush();
-    }
+  etapa('Contenido del Índice', function () {
+    orgIndice_(ctx.por[ORG_INDICE], ctx.reg, ctx.por, ctx.sinClas, ctx.ocultas);
   });
-  orgReintentar_(function () { ss.setActiveSheet(ind); });
-
-  deseado.forEach(function (n) {
-    var h = porNombre[n];
-    if (!h) return;
-    var c = null;
-    if (n === ORG_INDICE) c = '#202124';
-    else if (reg[n]) c = ORG_GRUPOS[reg[n].grupo].color;
-    else if (ocultas.indexOf(n) !== -1) c = ORG_GRUPOS.OCULTAS.color;
-    try {
-      var act = h.getTabColor();
-      if ((act || null) !== c) orgReintentar_(function () { h.setTabColor(c); });
-    } catch (e) {}
-    resumen.ordenadas++;
-  });
-
-  orgReintentar_(function () { orgGuia_(ss); });
-  SpreadsheetApp.flush();
-  orgReintentar_(function () { orgIndice_(ind, reg, porNombre, sinClas, ocultas); });
-  PropertiesService.getScriptProperties().setProperty(ORG_PROP_HUELLA, deseado.join('|'));
 
   ORG_HOJAS.forEach(function (f) {
-    var h = porNombre[f[0]];
+    var h = ctx.por[f[0]];
     if (!h || ORG_SIN_ENCABEZADO.indexOf(f[0]) !== -1) return;
-    if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
+    etapa('Encabezado ' + f[0], function () {
+      if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
+    });
   });
-  resumen.formatos = completo ? orgFormatos_(ss) : 0;
+
+  if (completo) {
+    ORG_CON_FORMATO.forEach(function (n) {
+      var h = ctx.por[n];
+      if (!h) return;
+      etapa('Formato ' + n, function () { resumen.formatos += orgFormatosHoja_(h); });
+    });
+  }
   return resumen;
 }
 
