@@ -1242,6 +1242,7 @@ function llavePrecio_(tabla, sku) {
   var s = sku_(sku);
   if (tabla.minimos[s]) return s;
   if (tabla.minimos[skuSinVariante_(s)]) return skuSinVariante_(s);
+  if (tabla.minimos[skuCvaGeneral_(s)]) return skuCvaGeneral_(s);   // CVA premium (-CVA-MSI) → general -CVA
   if (!esCVA_(s) && tabla.minimos[skuBase_(s)]) return skuBase_(s);
   return '';
 }

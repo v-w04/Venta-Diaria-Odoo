@@ -263,7 +263,7 @@ function columnasPreciosErik_(sh) {
  */
 function minimoDe_(tabla, sku) {
   var s = sku_(sku);
-  var fila = tabla.minimos[s] || tabla.minimos[skuSinVariante_(s)];
+  var fila = tabla.minimos[s] || tabla.minimos[skuSinVariante_(s)] || tabla.minimos[skuCvaGeneral_(s)];
   // Open box (-OB) nunca toma el mínimo del producto nuevo: si no tiene el
   // suyo propio en PRECIOS ERIK, queda SIN REFERENCIA en vez de alertar.
   if (!fila && !esCVA_(s) && tipoPublicacion_(s) !== 'OPEN BOX') fila = tabla.minimos[skuBase_(s)];

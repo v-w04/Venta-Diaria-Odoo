@@ -91,6 +91,16 @@ function skuSinVariante_(s) {
   return sku_(s).replace(/-MSI-[2-9]$/, '-MSI').replace(/-[2-9]$/, '');
 }
 
+/**
+ * SKU de CVA publicado en Walmart (-CVA-MSI, -CVA-MSI-3, -CVA-2…) → el SKU general
+ * de PRECIOS ERIK, que termina en -CVA (ahí van clásica y premium). Si no es CVA
+ * con variante, regresa el mismo SKU.
+ */
+function skuCvaGeneral_(s) {
+  var v = sku_(s);
+  return /-CVA-(MSI(-[2-9])?|[2-9])$/.test(v) ? v.replace(/-(MSI(-[2-9])?|[2-9])$/, '') : v;
+}
+
 /** PREMIUM si termina en -MSI o -MSI-2..9. OPEN BOX si termina en -OB. */
 function tipoPublicacion_(s) {
   var v = sku_(s);
