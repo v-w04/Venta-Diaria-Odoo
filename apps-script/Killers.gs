@@ -84,7 +84,7 @@ var ENC_K_ACT = ['SKU', 'Detalles del artículo', 'PRECIO', 'Precio negociado',
                  'Disponibilidad', 'Observaciones', 'VALIDACIÓN', 'KAM',
                  // ── del script ──
                  'SKU GENERAL', 'SKU PRECIO', 'COMISION NORMAL', 'PROMOCION (PUNTOS)',
-                 'ORIGEN', 'ESTADO', 'CARGA KILLER', 'OTROS RANGOS'];
+                 'ORIGEN', 'ESTADO', 'CARGA KILLER', 'OTROS RANGOS', '% PERDIDA (site)'];
 var KA = { SKU: 0, CAT: 19 };   // T "KAM" = categoría
 
 var ENC_K_COM = ['CATEGORIA', 'COMISION', 'OTROS NOMBRES', 'PROMO CATEGORIA (puntos)', 'MARCAS (prefijo SKU)',
@@ -1032,6 +1032,8 @@ function reconstruirActivos_() {
   // % PERDIDA del killer es mayor al tope (3%) NO entra a ACTIVOS. Comparación por SKU exacto.
   var bm = null, nBajo = 0;
   try { bm = bajoMinimoDelSite_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Killers bajo minimo', { error: String(e && e.message || e) }); }
+  // % PERDIDA del site para mostrarlo en la columna AC de ACTIVOS (vacío = no está en Killers bajo minimo).
+  var perdidaSite_ = function (sku) { var e = bm && bm.skus[sku]; return e ? Math.round(e.perdida * 10) / 1000 : ''; };
   var sinBajo = function (sku) {
     var e = bm && bm.skus[sku];
     if (e && e.perdida > bm.tope + 0.0001) { nBajo++; return false; }
@@ -1093,7 +1095,8 @@ function reconstruirActivos_() {
       cat,                                                              // T KAM
       k.general, llave,                                                 // U V
       pr.normal, promo ? Math.round(pr.red * 1000) / 10 : '',          // W X (puntos)
-      k.origen, sel.estado, k.carga, otros                              // Y–AB
+      k.origen, sel.estado, k.carga, otros,                             // Y–AB
+      perdidaSite_(k.sku)                                               // AC % PERDIDA (confirmación visual)
     ]);
   };
 
@@ -1138,7 +1141,8 @@ function reconstruirActivos_() {
       'SI', p.depto || info.nombre,                                     // S T (depto de Walmart)
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
-      (info.red > 0) ? 'Mínimo − promo' : 'Mínimo' // Y–AB
+      (info.red > 0) ? 'Mínimo − promo' : 'Mínimo', // Y–AB
+      perdidaSite_(p.sku)                                               // AC % PERDIDA
     ]);
   };
 
@@ -1168,6 +1172,10 @@ function reconstruirActivos_() {
   res.promoCategoria = 0;
   try {
     extraCat = skusPromoCategoria_(pc).filter(function (p) { return !conKiller[p.sku]; });
+    // Lo que está en KILLERS BAJO MINIMO con pérdida mayor al tope tampoco entra por promoción de categoría.
+    var antes = extraCat.length;
+    extraCat = extraCat.filter(function (p) { var e = bm && bm.skus[p.sku]; return !(e && e.perdida > bm.tope + 0.0001); });
+    res.bajoMinimoPromo = antes - extraCat.length;
     escribirExcepcionesPromo_(skusPromoCategoria_.mism || []);
   } catch (e) {
     logWarn_('KILLERS', 'No se pudo leer el dashboard de Walmart (promoción de categoría)', { error: String(e && e.message || e) });
@@ -1244,6 +1252,7 @@ function formatoActivos_(sh, n) {
   f(7, '0.0%');
   [9, 10, 11].forEach(function (c) { f(c, 'dd/MM/yyyy HH:mm'); });
   [12, 14, 23].forEach(function (c) { f(c, '0.0%'); });
+  f(29, '0.0%');   // AC % PERDIDA (site)
 }
 
 // ── Reporte por mes ───────────────────────────────────────────────────────
