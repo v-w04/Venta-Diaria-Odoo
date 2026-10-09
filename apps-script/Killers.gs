@@ -1043,7 +1043,12 @@ function reconstruirActivos_() {
   var bm = null, nBajo = 0;
   try { bm = bajoMinimoDelSite_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Killers bajo minimo', { error: String(e && e.message || e) }); }
   // % PERDIDA del site para mostrarlo en la columna AC de ACTIVOS (vacío = no está en Killers bajo minimo).
-  var perdidaSite_ = function (sku) { var e = bm && bm.skus[sku]; return e ? e.perdida / 100 : ''; };
+  var perdidaSite_ = function (sku, r) {
+    var e = bm && bm.skus[sku];
+    if (e) return e.perdida / 100;
+    // No está en Killers bajo minimo: se calcula con la misma idea (cuánto falta del PAGAN para el mínimo; 0 si lo cubre).
+    return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + '),' + X('PRECIO', r) + '>0),MAX(0,(' + X('PRECIO', r) + '-' + X('PAGAN', r) + ')/' + X('PRECIO', r) + '),"")';
+  };
   var sinBajo = function (sku) {
     var e = bm && bm.skus[sku];
     if (e && e.perdida > bm.tope + 0.0001) { nBajo++; return false; }
@@ -1105,7 +1110,7 @@ function reconstruirActivos_() {
       k.general, llave,                                                 // U V
       pr.normal, promo ? Math.round(pr.red * 1000) / 10 : '',          // W X (puntos)
       k.origen, sel.estado, k.carga, otros,                             // Y–AB
-      perdidaSite_(k.sku)                                               // AC % PERDIDA (confirmación visual)
+      perdidaSite_(k.sku, r)                                               // AC % PERDIDA (confirmación visual)
     ]);
   };
 
@@ -1150,7 +1155,7 @@ function reconstruirActivos_() {
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
       (info.red > 0) ? 'Mínimo − promo' : 'Mínimo', // Y–AB
-      perdidaSite_(p.sku)                                               // AC % PERDIDA
+      perdidaSite_(p.sku, r)                                               // AC % PERDIDA
     ]);
   };
 
