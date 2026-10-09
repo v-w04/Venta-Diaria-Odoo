@@ -25,6 +25,9 @@ var ORG_GUIA   = '📖 Guía del menú';
 var ORG_PROP_HUELLA = 'ORG_HUELLA';
 var ORG_PROP_VISTO  = 'ORG_VISTO';
 var ORG_DIAS_SIN_USO = 30;
+var ORG_PROP_ANCHO = 'ORG_ANCHO';
+var ORG_ANCHO_MAX = 280;      // tope en píxeles para columnas de contenido largo
+var ORG_ANCHO_MIN = 60;
 
 var ORG_GRUPOS = {
   GUIA:    { titulo: '📖 GUIA',                          color: '#00796b' },
@@ -97,10 +100,13 @@ var ORG_NIVEL_COLOR = { 'DIARIO': '#d9ead3', 'A VECES': '#fff2cc', 'SOPORTE': '#
 /** Hojas con encabezado propio en otra fila o que el usuario llena: no se les pone estilo de encabezado ni se congela. */
 var ORG_SIN_ENCABEZADO = ['PRECIOS ERIK', 'Sobreventa WFS', 'Sobreventa Pick', 'KILLERS PEGAR', 'BUSCAR VENTAS'];
 /** Solo estas hojas reciben formato unificado de precio/fecha (las demás ya tienen el suyo). */
-var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'CARGA PROMOCIONES'];
+var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'CARGA PROMOCIONES', 'COMPARAR WALMART', 'KILLERS HISTORICO',
+                       'Promociones (site)', 'WALMART', 'PEDIDOS CVA', 'Histórico de alertas'];
+// Hojas sin encabezado en la fila 1: columnas de dinero fijas (desde la fila 3)
+var ORG_DINERO_FIJO = { 'PRECIOS ERIK': [3, 4, 15, 17] };
 
-var ORG_RE_DINERO = /^(PRECIO|MINIMO|NORMAL|MAXIMO|NOS PAGAN|PUBLICADO|NEGOCIADO|CUPON|FALTA)\b/;
-var ORG_RE_FECHA  = /^(ACTUALIZADO|INICIA|TERMINA|INICIO|FIN)\b/;
+var ORG_RE_DINERO = /^(PRECIO|MINIMO|NORMAL|MAXIMO|NOS PAGAN|PUBLICADO|NEGOCIADO|CUPON|FALTA|CLASICA|PREMIUM|RECIBIMOS|ENTRA|CARGA \(|DIFERENCIA VS|IMPORTE|TOTAL ORDEN)\b/;
+var ORG_RE_FECHA  = /^(ACTUALIZADO|INICIA|TERMINA|INICIO|INI|FIN|FECHA|CAPTURADA|CAT CORTE|REGISTRADO|VENTA DIARIA ODOO)\b/;
 var ORG_FMT_DINERO = '$#,##0.00';
 var ORG_FMT_FECHA  = 'yyyy-mm-dd hh:mm';
 
@@ -242,7 +248,7 @@ function orgGuia_(ss) {
 function orgFormatos_(ss) {
   var total = 0, fallas = [];
   var limite = new Date().getTime() + 200 * 1000;
-  ORG_CON_FORMATO.forEach(function (n) {
+  ORG_CON_FORMATO.concat(Object.keys(ORG_DINERO_FIJO)).forEach(function (n) {
     var h = ss.getSheetByName(n);
     if (!h) return;
     if (new Date().getTime() > limite) { fallas.push('(tiempo) ' + n); return; }
@@ -256,6 +262,17 @@ function orgFormatos_(ss) {
 function orgFormatosHoja_(h) {
   var total = 0;
   var nF = h.getLastRow(), nC = h.getLastColumn();
+  var fijo = ORG_DINERO_FIJO[h.getName()];
+  if (fijo) {
+    if (nF < 3) return 0;
+    fijo.forEach(function (c) {
+      if (c > nC) return;
+      if (h.getRange(3, c).getNumberFormat() === ORG_FMT_DINERO) return;
+      h.getRange(3, c, nF - 2, 1).setNumberFormat(ORG_FMT_DINERO);
+      total++;
+    });
+    return total;
+  }
   if (nF < 2 || nC < 1) return 0;
   var muestra = h.getRange(1, 1, Math.min(nF, 8), nC).getValues();
   var fmts = h.getRange(2, 1, 1, nC).getNumberFormats()[0];
@@ -293,11 +310,14 @@ function orgOrdenar() {
   }
   var falt = (orgFormatos_.fallas || []);
   if (falt.length) avisos.push('Formatos pendientes en: ' + falt.join(', ') + ' (vuelve a correrlo y los termina)');
+  var faltA = (orgAnchos_.faltan || []);
+  if (faltA.length) avisos.push('Anchos pendientes en: ' + faltA.join(', ') + ' (vuelve a correrlo y los termina)');
   var sinUso = Object.keys(r.sinUso);
   ui.alert('🗂️ Libro ordenado',
     r.ordenadas + ' hojas con color y orden.\n' +
     r.encabezados + ' encabezados unificados.\n' +
     r.formatos + ' columnas de precio/fecha con formato unificado.\n' +
+    r.anchos + ' hojas con ancho de columnas ajustado (encabezado completo).\n' +
     'Índice: hoja "' + ORG_INDICE + '" (la primera).\n' +
     (quitadas.length ? '\nBORRADAS (respaldos/temporales):\n  ' + quitadas.join('\n  ') + '\n' : '\nNo había respaldos ni temporales que borrar.\n') +
     (sinUso.length
@@ -381,7 +401,50 @@ function orgAplicar_(completo) {
     if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
   });
   resumen.formatos = completo ? orgFormatos_(ss) : 0;
+  resumen.anchos = completo ? orgAnchos_(ss) : 0;
   return resumen;
+}
+
+/**
+ * Ancho de columnas: nunca menor que el encabezado (se lee completo); si el contenido es corto se ajusta a él
+ * y si es largo se corta en ORG_ANCHO_MAX. Se calcula con una muestra (encabezado + primeras 300 filas), no
+ * con autoResize (muy lento en hojas grandes). Solo hojas del registro con encabezado en la fila 1; Índice y
+ * Guía llevan su propio ancho. Una hoja ya ajustada se salta mientras no cambien sus encabezados
+ * (firma en Script Properties ORG_ANCHO), así la segunda corrida casi no cuesta. Tiene tope de tiempo.
+ */
+function orgAnchos_(ss) {
+  var props = PropertiesService.getScriptProperties();
+  var hechas = {};
+  try { hechas = JSON.parse(props.getProperty(ORG_PROP_ANCHO) || '{}'); } catch (e) {}
+  var limite = new Date().getTime() + 150 * 1000, n = 0, faltan = [];
+  ORG_HOJAS.forEach(function (f) {
+    var nombre = f[0];
+    if (nombre === ORG_GUIA || ORG_SIN_ENCABEZADO.indexOf(nombre) !== -1) return;
+    var h = ss.getSheetByName(nombre);
+    if (!h) return;
+    var nC = Math.min(h.getLastColumn(), 60);
+    if (nC < 1 || h.getLastRow() < 1) return;
+    if (new Date().getTime() > limite) { faltan.push(nombre); return; }
+    try {
+      orgReintentar_(function () {
+        var datos = h.getRange(1, 1, Math.min(h.getLastRow(), 301), nC).getDisplayValues();
+        var firma = datos[0].join('|');
+        if (hechas[nombre] === firma) return;
+        for (var c = 0; c < nC; c++) {
+          var enc = String(datos[0][c] || ''), largo = 0;
+          for (var r = 1; r < datos.length; r++) { var l = String(datos[r][c] || '').length; if (l > largo) largo = l; }
+          var pxEnc = enc ? enc.length * 8 + 34 : 0;          // negrita + icono de filtro
+          var pxCont = Math.min(largo * 6.6 + 16, ORG_ANCHO_MAX);
+          h.setColumnWidth(c + 1, Math.round(Math.max(pxEnc, pxCont, ORG_ANCHO_MIN)));
+        }
+        hechas[nombre] = firma;
+        n++;
+      });
+    } catch (e) { faltan.push(nombre); console.log('Anchos ' + nombre + ': ' + e.message); }
+  });
+  props.setProperty(ORG_PROP_ANCHO, JSON.stringify(hechas));
+  orgAnchos_.faltan = faltan;
+  return n;
 }
 
 /** Estilo del encabezado (fila 1) y fila congelada. true si cambió algo. */
