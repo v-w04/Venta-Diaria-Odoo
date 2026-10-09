@@ -134,14 +134,23 @@ function actualizarPreciosErik_(forzar) {
   if (sh.getMaxRows() < necesarias) {
     sh.insertRowsAfter(sh.getMaxRows(), necesarias - sh.getMaxRows() + 50);
   }
-  if (sh.getMaxColumns() < 4) sh.insertColumnsAfter(sh.getMaxColumns(), 4 - sh.getMaxColumns());
-
-  sh.getRange(1, 1, sh.getMaxRows(), 4).clearContent();
-  sh.getRange(1, 1, 2, 4).setValues([
-    ['NOMBRE', 'SKU GENERAL', 'WALMART', ''],
-    ['',       '',            'CLASICA', 'PREMIUM']
-  ]);
-  if (filas.length) sh.getRange(CFG.PE.FILA_DATOS, 1, filas.length, 4).setValues(filas);
+  // Las 4 columnas del script se ubican por su TÍTULO (NOMBRE, SKU GENERAL, CLASICA, PREMIUM), donde estén.
+  // Solo se vacían y escriben esas columnas; las demás (killers, cupones, las que agregues) no se tocan.
+  var C = columnasPreciosErik_(sh);
+  var cNom = colDe_(sh, 'NOMBRE', 1) || 1;
+  var cols = [cNom, C.SKU + 1, C.CLASICA + 1, C.PREMIUM + 1];
+  var maxC = Math.max.apply(null, cols);
+  if (sh.getMaxColumns() < maxC) sh.insertColumnsAfter(sh.getMaxColumns(), maxC - sh.getMaxColumns());
+  var filasMax = sh.getMaxRows() - CFG.PE.FILA_DATOS + 1;
+  var titulos = [[1, cols[0], 'NOMBRE'], [1, cols[1], 'SKU GENERAL'], [1, cols[2], 'WALMART'], [2, cols[2], 'CLASICA'], [2, cols[3], 'PREMIUM']];
+  titulos.forEach(function (t) {
+    var cel = sh.getRange(t[0], t[1]);
+    if (String(cel.getValue() || '').trim() === '') cel.setValue(t[2]);
+  });
+  cols.forEach(function (c, j) {
+    sh.getRange(CFG.PE.FILA_DATOS, c, filasMax, 1).clearContent();
+    if (filas.length) sh.getRange(CFG.PE.FILA_DATOS, c, filas.length, 1).setValues(filas.map(function (x) { return [x[j]]; }));
+  });
   SpreadsheetApp.flush();
 
   setProp_('HASH_PRECIOS_ERIK', huella);
@@ -421,8 +430,14 @@ function leerAsignados_() {
   var mapa = {};
   var sh = libro_().getSheetByName(CFG.H.ASIGNADOS);
   if (!sh || sh.getLastRow() < 2) return mapa;
-  var datos = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), 1)).getValues();
+  var todo = sh.getRange(1, 1, sh.getLastRow(), Math.max(sh.getLastColumn(), 1)).getValues();
+  // Solo cuentan las columnas SKU PRINCIPAL y ASIGNADO n (por encabezado); cualquier otra que agregues
+  // (notas, fechas…) no se toma como SKU. Si la hoja no trae esos títulos, se usan todas como siempre.
+  var cols = [];
+  todo[0].forEach(function (h, i) { if (/^(SKU PRINCIPAL|ASIGNADO)/.test(norm_(h))) cols.push(i); });
+  var datos = todo.slice(1);
   datos.forEach(function (fila) {
+    if (cols.length) fila = cols.map(function (i) { return fila[i]; });
     var grupo = fila.map(sku_).filter(function (x) { return x; });
     if (grupo.length < 2) return;
     var info = { principal: grupo[0], grupo: grupo };

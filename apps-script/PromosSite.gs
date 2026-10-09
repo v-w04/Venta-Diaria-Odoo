@@ -157,15 +157,9 @@ function psGuardarEspejo_(todo) {
     setProp_(PS_ENC, firma);
 
     var sh = hoja_(PS_ESPEJO, null);
-    sh.clearContents();
-    if (sh.getMaxColumns() < todo[0].length) {
-      sh.insertColumnsAfter(sh.getMaxColumns(), todo[0].length - sh.getMaxColumns());
-    }
-    if (sh.getMaxRows() < todo.length + 1) {
-      sh.insertRowsAfter(sh.getMaxRows(), todo.length + 1 - sh.getMaxRows());
-    }
-    sh.getRange(1, 1, todo.length, todo[0].length).setValues(todo);
-    sh.getRange(todo.length + 1, 1).setValue('Copia de Site Sheet · ' + ahora_());
+    // Solo se escriben las columnas del site (por encabezado); las que agregues tú se quedan.
+    var map = escribirPorEncabezado_(sh, enc, todo.slice(1), { clave: 'ENC_ESCRITOS_PS' });
+    sh.getRange(todo.length + 1, map.pos[0]).setValue('Copia de Site Sheet · ' + ahora_());
   } catch (e) {
     psAvisarUnaVez_('espejo', function () {
       logWarn_('PROMOS SITE', 'No se pudo guardar la copia local de promociones',

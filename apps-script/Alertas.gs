@@ -179,7 +179,7 @@ function resumenWalmart() {
     'Ventas: ' + datos.length + '\n' +
     'Importe total: $' + Math.round(importe).toLocaleString('es-MX') + '\n' +
     'Sin precio en PRECIOS ERIK: ' + sinRef + '\n\n' +
-    'Histórico de alertas: ' + (al ? Math.max(0, ultimaFilaColA_(al) - 1) : 0) + ' registros\n' +
+    'Histórico de alertas: ' + (al ? Math.max(0, ultimaFilaColA_(al, mapaFisico_(al, ENC_ALERTAS)[0] + 1) - 1) : 0) + ' registros\n' +
     'Celdas del libro: ' + cel.total.toLocaleString('es-MX') + ' / 10,000,000\n' +
     'Llamadas a Odoo hoy: ' + llamadasDeHoy_()
   );

@@ -212,14 +212,10 @@ function sobreventa_() {
  */
 function escribirSobreventa_(nombre, filas) {
   var sh = hoja_(nombre, null);
-  sh.clearContents();
-
-  sh.getRange(1, 1).setValue('Última actualización: ' + ahora_());
-  sh.getRange(2, 1, 1, ENC_SOBREVENTA.length).setValues([ENC_SOBREVENTA]);
-
-  if (filas && filas.length) {
-    sh.getRange(3, 1, filas.length, ENC_SOBREVENTA.length).setValues(filas);
-  }
+  // Encabezados en la fila 2; solo se escriben las columnas del script (por encabezado). Tus columnas,
+  // formatos y validaciones se quedan. La fila 1 lleva la fecha en la primera columna del script.
+  var map = escribirPorEncabezado_(sh, ENC_SOBREVENTA, filas || [], { filaEnc: 2, clave: 'ENC_ESCRITOS_SOBREVENTA_' + nombre.replace(/\W+/g, '_') });
+  sh.getRange(1, map.pos[0]).setValue('Última actualización: ' + ahora_());
 }
 
 // ── Lectura de Odoo con paginación (reusa la conexión de Venta Diaria) ──────

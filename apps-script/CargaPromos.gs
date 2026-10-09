@@ -178,18 +178,16 @@ function cpGenerar(reglas) {
   var filas = listos.concat(otros);
 
   var h = hoja_(CP_HOJA, CP_ENC);
-  var ancho = Math.max(h.getLastColumn(), CP_ENC.length);
-  if (h.getMaxColumns() < ancho) h.insertColumnsAfter(h.getMaxColumns(), ancho - h.getMaxColumns());
-  if (h.getMaxRows() < filas.length + 1) h.insertRowsAfter(h.getMaxRows(), filas.length + 1 - h.getMaxRows());
-  if (h.getLastRow() > 1) h.getRange(2, 1, h.getLastRow() - 1, ancho).clearContent().clearFormat();
-  h.getRange(1, 1, 1, ancho).clearContent();
-  h.getRange(1, 1, 1, CP_ENC.length).setValues([CP_ENC]).setFontWeight('bold');
-  h.getRange(1, 1).setNote('Copia A:C de los renglones LISTO y pégalos en "Cargar promociones" del site.\nEl SKU va sin -MSI.');
+  var n0p = h.getLastRow();
+  // Solo las columnas del script, por encabezado: tus columnas, formatos y validaciones no se tocan.
+  var map = escribirPorEncabezado_(h, CP_ENC, filas, { clave: 'ENC_ESCRITOS_CARGA_PROMOS' });
+  h.getRange(1, map.pos[0]).setNote('Copia A:C de los renglones LISTO y pégalos en "Cargar promociones" del site.\nEl SKU va sin -MSI.');
+  var cEst = map.pos[3], nBgP = Math.max(n0p - 1, filas.length);
+  if (nBgP > 0) h.getRange(2, cEst, nBgP, 1).setBackground(null);   // solo el color de ESTADO
   if (filas.length) {
-    h.getRange(2, 1, filas.length, CP_ENC.length).setValues(filas);
-    h.getRange(2, 4, filas.length, 1).setBackgrounds(filas.map(function (f) { return [f[3] === 'LISTO' ? '#d9ead3' : '#fff2cc']; }));
+    h.getRange(2, cEst, filas.length, 1).setBackgrounds(filas.map(function (f) { return [f[3] === 'LISTO' ? '#d9ead3' : '#fff2cc']; }));
   }
-  h.setFrozenRows(1);
+  if (h.getFrozenRows() < 1) h.setFrozenRows(1);
   var res = { listos: listos.length, nuevos: nuevos, noCargar: noCargar, porRegla: porRegla };
   logInfo_('CARGA PROMOCIONES', 'Lista armada', { reglas: R.length, listos: res.listos, nuevos: nuevos, noCargar: noCargar });
   return res;

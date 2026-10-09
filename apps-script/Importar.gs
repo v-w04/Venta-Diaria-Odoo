@@ -207,7 +207,7 @@ function recortarPorFecha_(nombreHoja, colFecha, dias) {
   if (!dias) return 0;
   var sh = libro_().getSheetByName(nombreHoja);
   if (!sh) return 0;
-  var n = ultimaFilaColA_(sh);
+  var n = ultimaFilaColA_(sh, colFecha + 1);   // la columna de fecha, donde esté hoy
   if (n < 3) return 0;
 
   var corte = Date.now() - dias * 86400000;

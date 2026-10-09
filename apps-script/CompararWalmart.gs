@@ -175,24 +175,26 @@ function compararWalmart_() {
   var h0 = libro_().getSheetByName(CFG.H.COMPARAR);
   if (h0 && prop_('HUELLA_COMPARAR') === huella) return { total: out.length, cont: cont };
   var h = hoja_(CFG.H.COMPARAR, CW_ENC);
-  var ancho = Math.max(h.getLastColumn(), CW_ENC.length);
-  if (h.getLastRow() > 1) h.getRange(2, 1, h.getLastRow() - 1, ancho).clearContent().clearFormat().clearNote();
-  h.getRange(1, 1, 1, ancho).clearContent();
-  h.getRange(1, 1, 1, CW_ENC.length).setValues([CW_ENC]).setFontWeight('bold');
-  h.getRange(1, 4).setNote('OK: entra ≥ mínimo\nDEJAR: hasta ' + bd.b1 + '% abajo\nREVISAR KAM: ' + bd.b1 + '% a ' + bd.b2 +
+  var n0c = h.getLastRow();
+  // Solo las columnas del script, ubicadas por encabezado: tus columnas, formatos y validaciones no se tocan.
+  var map = escribirPorEncabezado_(h, CW_ENC, out, { clave: 'ENC_ESCRITOS_COMPARAR' });
+  var cDec = map.pos[3];
+  h.getRange(1, cDec).setNote('OK: entra ≥ mínimo\nDEJAR: hasta ' + bd.b1 + '% abajo\nREVISAR KAM: ' + bd.b1 + '% a ' + bd.b2 +
     '%\nCAMBIO / QUITAR: más de ' + bd.b2 + '%\n(Se cambian en el menú: Configurar bandas de alerta)');
+  var nBg = Math.max(n0c - 1, out.length);
+  if (nBg > 0) h.getRange(2, cDec, nBg, 1).setBackground(null);   // solo el color de DECISIÓN
   if (out.length) {
-    h.getRange(2, 1, out.length, CW_ENC.length).setValues(out);
-    h.getRange(2, 5, out.length, 1).setNumberFormat('0.0%');
-    h.getRange(2, 6, out.length, 5).setNumberFormat('#,##0.00');
+    formatoColumna_(h, map, '% VS MÍNIMO', out.length, '0.0%');
+    ['ENTRA (PRECIO + CUPÓN)', 'MÍNIMO APLICABLE', 'PRECIO EN WALMART', 'CARGA (LO QUE PUBLICAS)', 'DIFERENCIA vs CARGA']
+      .forEach(function (x) { formatoColumna_(h, map, x, out.length, '#,##0.00'); });
     var col = out.map(function (x) {
       var k = x[3];
       return [k === 'CAMBIO / QUITAR' ? '#e06666' : k === 'REVISAR KAM' ? '#f9cb9c' : k === 'DEJAR' ? '#fff2cc' :
               k === 'OK' ? '#d9ead3' : '#d9d9d9'];
     });
-    h.getRange(2, 4, out.length, 1).setBackgrounds(col);
+    h.getRange(2, cDec, out.length, 1).setBackgrounds(col);
   }
-  h.setFrozenRows(1);
+  if (h.getFrozenRows() < 1) h.setFrozenRows(1);
   setProp_('HUELLA_COMPARAR', huella);
   logInfo_('COMPARAR WALMART', 'Comparación terminada', cont);
   return { total: out.length, cont: cont };

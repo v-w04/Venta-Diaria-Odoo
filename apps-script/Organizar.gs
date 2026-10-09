@@ -256,7 +256,15 @@ function orgFormatos_(ss) {
     catch (e) { fallas.push(n); console.log('Formatos ' + n + ': ' + e.message); }
   });
   orgFormatos_.fallas = fallas;
+  if (!fallas.length) setProp_('ORG_FMT_MIG_V1', '1');   // ya se migraron los formatos viejos: de aquí en adelante solo General
   return total;
+}
+
+/** Formatos que el script o Sheets ponían solos antes; la primera corrida los cambia por los nuevos, después ya no. */
+function orgFmtLegado_() {
+  if (prop_('ORG_FMT_MIG_V1') === '1') return null;
+  return ['#,##0.00', '#,##0', '"$"#,##0.00', '"$"#,##0', '$#,##0', 'mm-dd-yy', 'm/d/yyyy h:mm:ss', 'yyyy-mm-dd h:mm:ss',
+          'yyyy-mm-dd hh:mm', 'dd/MM/yyyy HH:mm', 'm/d/yyyy', 'mm/dd/yyyy', 'm/d/yyyy h:mm'];
 }
 
 function orgFormatosHoja_(h) {
@@ -267,16 +275,13 @@ function orgFormatosHoja_(h) {
     if (nF < 3) return 0;
     fijo.forEach(function (c) {
       if (c > nC) return;
-      if (h.getRange(3, c).getNumberFormat() === ORG_FMT_DINERO) return;
-      h.getRange(3, c, nF - 2, 1).setNumberFormat(ORG_FMT_DINERO);
-      total++;
+      total += formatoSuave_(h, c, 3, nF - 2, ORG_FMT_DINERO, orgFmtLegado_());
     });
     return total;
   }
   if (nF < 2 || nC < 1) return 0;
   var muestra = h.getRange(1, 1, Math.min(nF, 8), nC).getValues();
-  var fmts = h.getRange(2, 1, 1, nC).getNumberFormats()[0];
-  var enc = muestra[0];
+  var enc = muestra[0], legado = orgFmtLegado_();
   for (var c = 0; c < nC; c++) {
     var t = orgNorm_(enc[c]);
     if (!t) continue;
@@ -288,10 +293,9 @@ function orgFormatosHoja_(h) {
       if (tipo === 'D' ? (typeof x === 'number') : (x instanceof Date)) { hay = true; break; }
     }
     if (!hay) continue;
-    var fmt = tipo === 'D' ? ORG_FMT_DINERO : ORG_FMT_FECHA;
-    if (fmts[c] === fmt) continue;
-    h.getRange(2, c + 1, nF - 1, 1).setNumberFormat(fmt);
-    total++;
+    // Formato suave: solo celdas en General (o con un formato viejo del script la primera vez). Si ya le
+    // pusiste tu propio formato a la columna, se respeta y se extiende a los renglones nuevos.
+    total += formatoSuave_(h, c + 1, 2, nF - 1, tipo === 'D' ? ORG_FMT_DINERO : ORG_FMT_FECHA, legado);
   }
   return total;
 }
@@ -428,16 +432,20 @@ function orgAnchos_(ss) {
     try {
       orgReintentar_(function () {
         var datos = h.getRange(1, 1, Math.min(h.getLastRow(), 301), nC).getDisplayValues();
-        var firma = datos[0].join('|');
-        if (hechas[nombre] === firma) return;
+        // Solo se ajustan las columnas que NO se habían ajustado antes (por encabezado). Si luego cambias
+        // un ancho a mano, o mueves la columna, se respeta; una columna nueva sí se ajusta.
+        var ya = Array.isArray(hechas[nombre]) ? hechas[nombre] : [];
+        var nuevosEnc = datos[0].map(orgNorm_).filter(function (k) { return k && ya.indexOf(k) < 0; });
+        if (!nuevosEnc.length) return;
         for (var c = 0; c < nC; c++) {
+          if (ya.indexOf(orgNorm_(datos[0][c])) >= 0 || !orgNorm_(datos[0][c])) continue;
           var enc = String(datos[0][c] || ''), largo = 0;
           for (var r = 1; r < datos.length; r++) { var l = String(datos[r][c] || '').length; if (l > largo) largo = l; }
           var pxEnc = enc ? enc.length * 8 + 34 : 0;          // negrita + icono de filtro
           var pxCont = Math.min(largo * 6.6 + 16, ORG_ANCHO_MAX);
           h.setColumnWidth(c + 1, Math.round(Math.max(pxEnc, pxCont, ORG_ANCHO_MIN)));
         }
-        hechas[nombre] = firma;
+        hechas[nombre] = ya.concat(nuevosEnc);
         n++;
       });
     } catch (e) { faltan.push(nombre); console.log('Anchos ' + nombre + ': ' + e.message); }

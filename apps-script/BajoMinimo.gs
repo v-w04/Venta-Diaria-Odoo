@@ -88,15 +88,12 @@ function bmGuardarEspejo_(todo) {
     }
     setProp_(BM_ENC, firma);
     var sh = hoja_(K_BAJO, null);
-    sh.clearContents();
-    if (sh.getMaxColumns() < todo[0].length) sh.insertColumnsAfter(sh.getMaxColumns(), todo[0].length - sh.getMaxColumns());
-    if (sh.getMaxRows() < todo.length + 2) sh.insertRowsAfter(sh.getMaxRows(), todo.length + 2 - sh.getMaxRows());
-    sh.getRange(1, 1, todo.length, todo[0].length).setValues(todo);
-    sh.getRange(1, 1, 1, todo[0].length).setFontWeight('bold');
-    sh.setFrozenRows(1);
-    sh.getRange(todo.length + 2, 1).setValue('Copia de Site Sheet · ' + ahora_());
+    // Solo se escriben las columnas del site (por encabezado); las que agregues tú, y sus formatos, se quedan.
+    var map = escribirPorEncabezado_(sh, enc, todo.slice(1), { clave: 'ENC_ESCRITOS_K_BAJO' });
+    if (sh.getFrozenRows() < 1) sh.setFrozenRows(1);
+    sh.getRange(todo.length + 2, map.pos[0]).setValue('Copia de Site Sheet · ' + ahora_());
     var cPer = -1;
-    enc.forEach(function (x, i) { if (cPer < 0 && norm_(x).indexOf('PERDIDA') >= 0) cPer = i + 1; });
+    enc.forEach(function (x, i) { if (cPer < 0 && norm_(x).indexOf('PERDIDA') >= 0) cPer = map.pos[i]; });
     if (cPer > 0) { try { bmColorPerdida_(sh, cPer); } catch (e2) { logWarn_('BAJO MINIMO', 'No se pudo poner el color de % PERDIDA', { error: String(e2 && e2.message || e2) }); } }
   } catch (e) {
     ksAvisarUnaVez_('bm_espejo', function () {

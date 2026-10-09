@@ -289,7 +289,7 @@ function comisionesNormales_() {
   // (ej. COMPUTO en Computadoras 10% y en Accesorios 15%) es ambiguo: no se
   // usa, y esa comisión normal se deduce de lo que trae el killer.
   var alias = {}, ambiguos = {};
-  sh.getRange(2, 1, n - 1, 3).getValues().forEach(function (r) {
+  leerPorEncabezado_(sh, ENC_K_COM.slice(0, 3)).forEach(function (r) {   // CATEGORIA, COMISION, OTROS NOMBRES: donde estén
     var c = pct_(r[1]);
     if (!norm_(r[0]) || c === '') return;
     m[norm_(r[0])] = c;
@@ -316,8 +316,7 @@ function promosCategoria_() {
   var sh = libro_().getSheetByName(K_COM);
   var out = { nombres: {}, marcas: [], cats: {} };
   if (!sh || sh.getLastRow() < 2) return out;
-  var ancho = Math.min(Math.max(sh.getLastColumn(), 5), 7);
-  sh.getRange(2, 1, sh.getLastRow() - 1, ancho).getValues().forEach(function (r) {
+  leerPorEncabezado_(sh, ENC_K_COM).forEach(function (r) {   // por encabezado: puedes mover o agregar columnas
     var cat = norm_(r[0]);
     if (!cat) return;
     var red = descKam_(r[3]);
@@ -396,16 +395,12 @@ function promoSiteQueAplica_(promos, pc, sku, depto) {
 function escribirExcepcionesPromo_(lista) {
   try {
     var sh = hoja_(K_EXC, ENC_K_EXC);
-    if (sh.getMaxColumns() < ENC_K_EXC.length) sh.insertColumnsAfter(sh.getMaxColumns(), ENC_K_EXC.length - sh.getMaxColumns());
     var filas = lista.slice().sort(function (a, b) { return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0; })
       .map(function (p) {
         return [p.sku, p.shelf || '(sin categoría en Walmart)', p.promoCat || '',
                 'No se carga como promoción. ' + (p.motivo || '')];
       });
-    if (sh.getMaxRows() < filas.length + 1) sh.insertRowsAfter(sh.getMaxRows(), filas.length + 1 - sh.getMaxRows());
-    sh.getRange(1, 1, 1, ENC_K_EXC.length).setValues([ENC_K_EXC]).setFontWeight('bold');
-    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(sh.getLastColumn(), ENC_K_EXC.length)).clearContent();
-    if (filas.length) sh.getRange(2, 1, filas.length, ENC_K_EXC.length).setValues(filas);
+    escribirPorEncabezado_(sh, ENC_K_EXC, filas, { clave: 'ENC_ESCRITOS_K_EXC' });   // por encabezado; no toca lo tuyo
   } catch (e) {
     logWarn_('KILLERS', 'No se pudo escribir EXCEPCIONES CATEGORIA', { error: String(e && e.message || e) });
   }
@@ -885,10 +880,9 @@ function guardarEnHistorico_(lista, carga) {
 function leerKam_(tabla) {
   var sh = libro_().getSheetByName(K_KAM);
   if (!sh || sh.getLastRow() < 2) return [];
-  var ancho = Math.max(Math.min(sh.getLastColumn(), ENC_K_KAM.length), 9);
   var rCat = {}, com = comisionesNormales_();
   var descDe = function (r) { return descKam_(r[8]); };
-  return sh.getRange(2, 1, sh.getLastRow() - 1, ancho).getValues()
+  return leerPorEncabezado_(sh, ENC_K_KAM)   // por encabezado (SKU, PRECIO NEGOCIADO, CUPON, INICIO, FIN, …)
     .filter(function (r) { return sku_(r[0]) && (num_(r[1]) > 0 || descDe(r) > 0); })
     .map(function (r) {
       var desc = num_(r[1]) > 0 ? '' : descDe(r);
@@ -1005,8 +999,9 @@ function reconstruirActivos_() {
   Object.keys(excluidos).forEach(function (s) { if (porSku[s]) { delete porSku[s]; nExcl++; } });
 
   var previos = {};
-  var n0 = ultimaFilaColA_(sh);
-  if (n0 > 1) sh.getRange(2, 1, n0 - 1, 1).getValues().forEach(function (r) { previos[sku_(r[0])] = true; });
+  var cSkuA = colDe_(sh, 'SKU') || 1;             // la columna SKU donde esté (puedes mover o insertar columnas)
+  var n0 = ultimaFilaColA_(sh, cSkuA);
+  if (n0 > 1) sh.getRange(2, cSkuA, n0 - 1, 1).getValues().forEach(function (r) { previos[sku_(r[0])] = true; });
 
   // Departamento de Walmart (dashboard) como categoría cuando no la capturaste
   var depto = {};
@@ -1015,6 +1010,21 @@ function reconstruirActivos_() {
 
   var pc = promosCategoria_(), votos = {};
   var hojaPrecios = "'" + CFG.H.PRECIOS + "'!";
+  // Columnas de PRECIOS ERIK por su título (no por letra fija): SKU GENERAL, CLASICA, PREMIUM.
+  var cpe = { SKU: CFG.PE.COL_SKU - 1, CLASICA: CFG.PE.COL_CLASICA - 1, PREMIUM: CFG.PE.COL_PREMIUM - 1 };
+  try { var shPe = libro_().getSheetByName(CFG.H.PRECIOS); if (shPe) cpe = columnasPreciosErik_(shPe); } catch (e) { /* se queda con las de siempre */ }
+  var lPeSku = letraCol_(cpe.SKU), lPeCla = letraCol_(cpe.CLASICA), lPePre = letraCol_(cpe.PREMIUM);
+  // Fórmulas de ACTIVOS: cada referencia es refCol_('ENCABEZADO', fila); se resuelve a la letra real al escribir.
+  var X = function (h, r) { return refCol_(h, r); };
+  var fxPrecio = function (r, premium) {
+    var v = X('SKU PRECIO', r), cm = premium ? lPePre : lPeCla;
+    return '=IF(' + v + '="","NO ESTA",IFERROR(XLOOKUP(' + v + ',' + hojaPrecios + '$' + lPeSku + ':$' + lPeSku + ',' +
+      hojaPrecios + '$' + cm + ':$' + cm + '),"NO ESTA"))';
+  };
+  var fxPagan = function (r) { return '=IF(' + X('Precio negociado', r) + '="","",' + X('Precio negociado', r) + '+N(' + X('Cupón de oferta', r) + '))'; };
+  var fxPct = function (r) { return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + ')),' + X('PAGAN', r) + '/' + X('PRECIO', r) + ',"")'; };
+  var fxCarga = function (r) { return '=' + X('Precio negociado', r); };
+  var fxFechaFmt = function (r) { return '=IF(' + X('Finalización de la oferta', r) + '="","",' + X('Finalización de la oferta', r) + '+TIME(6,0,0))'; };
   var res = { total: 0, promos: 0, porIniciar: 0, sinCategoria: 0, entraron: 0 };
   var filas = [], promos = [];
   // Orden: primero los VIGENTES (lo que subes hoy), al final los POR INICIAR.
@@ -1069,10 +1079,10 @@ function reconstruirActivos_() {
       .map(function (x) { return '$' + x.negoc + ' ' + ddmm_(x.ini).slice(0, 5) + '–' + ddmm_(x.fin).slice(0, 5); })
       .join(' · ');
     var llave = llavePrecio_(tabla, k.sku);
-    var colMin = tipoPublicacion_(k.sku) === 'PREMIUM' ? 'D' : 'C';
-    // D: KAM con DESCUENTO % → fórmula sobre C, igual que tu hoja de Fotografía
+    var premiumK = tipoPublicacion_(k.sku) === 'PREMIUM';
+    // D: KAM con DESCUENTO % → fórmula sobre PRECIO, igual que tu hoja de Fotografía
     var negoc = k.desc
-      ? '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + k.desc + ')/10)*10+9,"")'
+      ? '=IF(ISNUMBER(' + X('PRECIO', r) + '),INT((' + X('PRECIO', r) + '-' + X('PRECIO', r) + '*' + k.desc + ')/10)*10+9,"")'
       : k.negoc;
     if (promo) res.promos++;
     if (!cat) res.sinCategoria++;
@@ -1081,15 +1091,14 @@ function reconstruirActivos_() {
     filas.push([
       k.sku,                                                            // A SKU
       k.detalles,                                                       // B
-      '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
-        hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
+      fxPrecio(r, premiumK),                                            // C PRECIO
       negoc,                                                            // D
       k.cupon === 0 ? '' : k.cupon,                                     // E
-      '=IF(D' + r + '="","",D' + r + '+N(E' + r + '))',                 // F PAGAN
-      '=IF(AND(ISNUMBER(C' + r + '),ISNUMBER(F' + r + ')),F' + r + '/C' + r + ',"")', // G %
-      '=D' + r,                                                         // H Carga
+      fxPagan(r),                                                       // F PAGAN
+      fxPct(r),                                                         // G %
+      fxCarga(r),                                                       // H Carga
       k.ini, k.fin,                                                     // I J
-      '=IF(J' + r + '="","",J' + r + '+TIME(6,0,0))',                   // K Fecha formato
+      fxFechaFmt(r),                                                    // K Fecha formato
       k.comCup, k.msi, k.comMsi, k.wfs, k.devol, k.disp, k.obs,         // L–R
       'SI',                                                             // S VALIDACIÓN
       cat,                                                              // T KAM
@@ -1114,27 +1123,26 @@ function reconstruirActivos_() {
     // info sería undefined y la corrida entera se caía.
     var info = pc.cats[p.cat] || { normal: undefined, red: 0, nombre: p.cat || '' };
     var llave = llavePrecio_(tabla, p.sku);
-    var colMin = tipoPublicacion_(p.sku) === 'PREMIUM' ? 'D' : 'C';
+    var premiumP = tipoPublicacion_(p.sku) === 'PREMIUM';
     var normal = info.normal === undefined ? '' : info.normal;
     var fin = normal === '' ? '' : Math.round((normal - info.red) * 1000) / 1000;
     if (!previos[p.sku]) res.entraron++;
     res.promoCategoria++;
     filas.push([
       p.sku, p.nombre,
-      '=IF(V' + r + '="","NO ESTA",IFERROR(XLOOKUP(V' + r + ',' + hojaPrecios + '$B:$B,' +
-        hojaPrecios + '$' + colMin + ':$' + colMin + '),"NO ESTA"))',   // C PRECIO
+      fxPrecio(r, premiumP),                                            // C PRECIO
       // Regla de Luis (07/10/2026): killers y promociones se calculan SIEMPRE sobre el
       // PRECIO MÍNIMO de Erik (el site calcula sobre el precio normal, no sirve).
       //   · mínimo − puntos% de la promo, terminado en 9 (8,049 con 7% → 7,489), tanto en la
       //     clásica como en la premium (-MSI) que no tenga killer vigente (los que sí tienen
       //     killer ya traen el descuento y entran como killer, no como promoción).
       (info.red > 0)
-        ? '=IF(ISNUMBER(C' + r + '),INT((C' + r + '-C' + r + '*' + info.red.toFixed(4) + ')/10)*10+9,"")'
-        : '=IF(ISNUMBER(C' + r + '),C' + r + ',"")',                    // D
+        ? '=IF(ISNUMBER(' + X('PRECIO', r) + '),INT((' + X('PRECIO', r) + '-' + X('PRECIO', r) + '*' + info.red.toFixed(4) + ')/10)*10+9,"")'
+        : '=IF(ISNUMBER(' + X('PRECIO', r) + '),' + X('PRECIO', r) + ',"")',   // D
       '',                                                               // E
-      '=IF(D' + r + '="","",D' + r + '+N(E' + r + '))',                 // F PAGAN
-      '=IF(AND(ISNUMBER(C' + r + '),ISNUMBER(F' + r + ')),F' + r + '/C' + r + ',"")', // G %
-      '=D' + r,                                                         // H Carga
+      fxPagan(r),                                                       // F PAGAN
+      fxPct(r),                                                         // G %
+      fxCarga(r),                                                       // H Carga
       '', '', '',                                                       // I J K
       fin, '', fin === '' ? '' : Math.round((fin + extra) * 1000) / 1000, // L M N
       '', '', '', 'Promoción de categoría (stock ' + p.stock + ')',     // O P Q R
@@ -1184,19 +1192,14 @@ function reconstruirActivos_() {
   extraCat.sort(function (a, b) { return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0; }).forEach(filaPromoCat);
   porIniciar.forEach(filaKiller);
 
-  var ancho = Math.max(sh.getLastColumn(), ENC_K_ACT.length);
-  if (sh.getMaxColumns() < ancho) sh.insertColumnsAfter(sh.getMaxColumns(), ancho - sh.getMaxColumns());
-  if (n0 > 1) sh.getRange(2, 1, n0 - 1, ancho).clearContent();
-  sh.getRange(1, 1, 1, ENC_K_ACT.length).setValues([ENC_K_ACT]);   // encabezado siempre al día
-  if (filas.length) {
-    if (sh.getMaxRows() < filas.length + 1) sh.insertRowsAfter(sh.getMaxRows(), filas.length + 1 - sh.getMaxRows());
-    sh.getRange(2, 1, filas.length, ENC_K_ACT.length).setValues(filas);
-    formatoActivos_(sh, filas.length);
-  }
+  // Solo se escriben las columnas del script, ubicadas por encabezado; tus columnas, formatos,
+  // validaciones y reglas condicionales se quedan como están.
+  var map = escribirPorEncabezado_(sh, ENC_K_ACT, filas, { clave: 'ENC_ESCRITOS_K_ACT' });
+  if (filas.length) formatoActivos_(sh, filas.length, map);
   res.total = filas.length;
   res.promociones = promos.length;
   var ahoraSkus = {};
-  filas.forEach(function (f) { ahoraSkus[sku_(f[0])] = true; });
+  filas.forEach(function (f) { ahoraSkus[sku_(f[0])] = true; });   // f[0] = SKU en el arreglo interno (orden ENC_K_ACT)
   res.salieron = Object.keys(previos).filter(function (k) { return k && !ahoraSkus[k]; }).length;
   setProp_('KILLERS_ACTIVOS_N', String(filas.length));
   return res;
@@ -1247,14 +1250,17 @@ function llavePrecio_(tabla, sku) {
   return '';
 }
 
-function formatoActivos_(sh, n) {
-  var f = function (col, fmt) { sh.getRange(2, col, n, 1).setNumberFormat(fmt); };
-  [3, 4, 5, 6, 8].forEach(function (c) { f(c, '$#,##0'); });
-  f(7, '0.0%');
-  [9, 10, 11].forEach(function (c) { f(c, 'dd/MM/yyyy HH:mm'); });
-  [12, 14, 23].forEach(function (c) { f(c, '0.0%'); });
-  f(29, '0.00%');   // AC % PERDIDA (site), igual que la copia
-  try { bmColorPerdida_(sh, 29); } catch (e) { logWarn_('KILLERS', 'No se pudo poner el color de % PERDIDA', { error: String(e && e.message || e) }); }   // rojo tenue si pasa de 3%, verde tenue si es aceptable
+function formatoActivos_(sh, n, map) {
+  var f = function (h, fmt) { formatoColumna_(sh, map, h, n, fmt); };
+  ['PRECIO', 'Precio negociado', 'Cupón de oferta', 'PAGAN', 'Carga'].forEach(function (h) { f(h, '$#,##0'); });
+  f('%', '0.0%');
+  ['Inicio de la oferta', 'Finalización de la oferta', 'Fecha formato'].forEach(function (h) { f(h, 'dd/MM/yyyy HH:mm'); });
+  ['Comisión sobre el cupón killer', 'Comisión MSI', 'COMISION NORMAL'].forEach(function (h) { f(h, '0.0%'); });
+  f('% PERDIDA (site)', '0.00%');   // igual que la copia de KILLERS BAJO MINIMO
+  var cPer = map.col[norm_('% PERDIDA (site)')];
+  if (cPer) {
+    try { bmColorPerdida_(sh, cPer); } catch (e) { logWarn_('KILLERS', 'No se pudo poner el color de % PERDIDA', { error: String(e && e.message || e) }); }   // rojo tenue si pasa de 3%, verde tenue si es aceptable
+  }
 }
 
 // ── Reporte por mes ───────────────────────────────────────────────────────

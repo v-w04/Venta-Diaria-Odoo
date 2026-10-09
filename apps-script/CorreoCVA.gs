@@ -20,7 +20,7 @@
 function marcaCvaInicial_() {
   if (prop_('CVA_FILA_AVISADA') !== '') return;
   var sh = libro_().getSheetByName(CFG.H.CVA);
-  setProp_('CVA_FILA_AVISADA', String(sh ? Math.max(ultimaFilaColA_(sh), 1) : 1));
+  setProp_('CVA_FILA_AVISADA', String(sh ? Math.max(ultimaFilaColA_(sh, mapaFisico_(sh, ENC_VENTAS)[0] + 1), 1) : 1));
 }
 
 /** Manda el reporte del día si ya es hora y no se ha mandado hoy. */
@@ -33,7 +33,7 @@ function enviarCorreoCVA_() {
 
     var sh = libro_().getSheetByName(CFG.H.CVA);
     if (!sh) return false;
-    var hasta = ultimaFilaColA_(sh);
+    var hasta = ultimaFilaColA_(sh, mapaFisico_(sh, ENC_VENTAS)[0] + 1);
     var desde = Number(prop_('CVA_FILA_AVISADA', String(hasta)));
 
     setProp_('CVA_DIA_REPORTE', hoy);           // una vez al día, pase lo que pase

@@ -156,7 +156,8 @@ function lpCompactar(nombres) {
     if (lista[i] === CFG.H.PRECIOS) {
       filasObjetivo = sh.getMaxRows();
     }
-    var colsObjetivo  = colsUsadas;
+    // Colchón de 5 columnas: no se borran las columnas en blanco que acabas de preparar (formato, validación).
+    var colsObjetivo  = colsUsadas + 5;
 
     try {
       if (sh.getMaxRows() > filasObjetivo) {

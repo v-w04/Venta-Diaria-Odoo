@@ -49,8 +49,12 @@ function hoja_(nombre, encabezados) {
     }
     var actual = sh.getRange(1, 1, 1, n).getValues()[0];
     var cambio = false;
+    // Solo se llena un encabezado VACÍO si ese nombre no existe ya en otra columna
+    // (si moviste o insertaste columnas, no se duplica ni se pisa lo tuyo).
+    var yaEstan = {};
+    sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), n)).getValues()[0].forEach(function (x) { var k = norm_(x); if (k) yaEstan[k] = true; });
     for (var i = 0; i < n; i++) {
-      if (actual[i] === '' || actual[i] === null) { actual[i] = encabezados[i]; cambio = true; }
+      if ((actual[i] === '' || actual[i] === null) && !yaEstan[norm_(encabezados[i])]) { actual[i] = encabezados[i]; cambio = true; }
     }
     if (cambio) sh.getRange(1, 1, 1, n).setValues([actual]);
   }
@@ -253,10 +257,10 @@ function avisarColumnas_(hoja, que, lista) {
 function filasOrdenadas_(sh, encabezados, desdeFila, filaEnc) {
   desdeFila = desdeFila || 2;
   if (!sh) return [];
-  var ultima = ultimaFilaColA_(sh);
+  var fisico = mapaFisico_(sh, encabezados, filaEnc);
+  var ultima = ultimaFilaColA_(sh, fisico[0] + 1);   // la primera columna del script, donde esté hoy
   if (ultima < desdeFila) return [];
 
-  var fisico = mapaFisico_(sh, encabezados, filaEnc);
   var ancho = Math.max(sh.getLastColumn(), 1);
   var crudas = sh.getRange(desdeFila, 1, ultima - desdeFila + 1, ancho).getValues();
   return crudas.map(function (f) {
@@ -277,7 +281,7 @@ function enOrdenFisico_(sh, encabezados, filas) {
 
   return filas.map(function (f) {
     var out = new Array(ancho);
-    for (var k = 0; k < ancho; k++) out[k] = '';
+    for (var k = 0; k < ancho; k++) out[k] = null;   // null = columna que no es del script: no se escribe
     for (var i = 0; i < fisico.length && i < f.length; i++) out[fisico[i]] = f[i];
     return out;
   });
@@ -351,7 +355,21 @@ function agregarFilas_(sh, filas, colAncla) {
   if (sh.getMaxColumns() < cols) {
     sh.insertColumnsAfter(sh.getMaxColumns(), cols - sh.getMaxColumns());
   }
-  sh.getRange(inicio, 1, filas.length, cols).setValues(filas);
+  // Solo se escriben las columnas del script (las null son tuyas: fórmulas, validaciones, lo que agregues).
+  var propias = [];
+  for (var c = 0; c < cols; c++) {
+    for (var q = 0; q < filas.length; q++) { if (filas[q][c] !== null && filas[q][c] !== undefined) { propias.push(c); break; } }
+  }
+  var i0 = 0;
+  while (i0 < propias.length) {
+    var i1 = i0;
+    while (i1 + 1 < propias.length && propias[i1 + 1] === propias[i1] + 1) i1++;
+    var c0 = propias[i0], c1 = propias[i1];
+    sh.getRange(inicio, c0 + 1, filas.length, c1 - c0 + 1).setValues(filas.map(function (f) {
+      return f.slice(c0, c1 + 1).map(function (v) { return v === null || v === undefined ? '' : v; });
+    }));
+    i0 = i1 + 1;
+  }
 }
 
 /** Cuenta las celdas de todo el libro (filas × columnas de cada hoja). */
@@ -400,4 +418,159 @@ function esErrorDeCeldas_(msg) {
 function avisar_(texto) {
   try { SpreadsheetApp.getUi().alert(texto); }
   catch (e) { console.log(texto); }
+}
+
+// ── Escritura por ENCABEZADO (hojas que el script llena) ───────────────────
+/*
+ * Regla de Luis: puede agregar, mover o borrar columnas, y poner formatos, validaciones y
+ * formatos condicionales propios SIN que el script lo rompa ni lo borre en la siguiente corrida.
+ * Por eso las hojas de salida se escriben con escribirPorEncabezado_:
+ *   · cada columna del script se ubica por el NOMBRE de su encabezado (donde esté);
+ *   · si falta, se crea AL FINAL de los encabezados existentes (nunca en medio);
+ *   · solo se limpia y se escribe el VALOR de las columnas del script: nunca clear(), clearFormat(),
+ *     deleteColumns() ni se tocan columnas, formatos, validaciones o reglas condicionales ajenas;
+ *   · las fórmulas que apuntan a otra columna usan refCol_('ENCABEZADO', fila) y se resuelven a la letra real.
+ */
+
+/** Marca para una fórmula: referencia a la columna con ese encabezado, en esa fila. */
+function refCol_(encabezado, fila) { return '\u0001' + encabezado + '\u0002' + fila; }
+
+/** Número de columna (1-based) de un encabezado en la fila indicada; 0 si no está. */
+function colDe_(sh, encabezado, filaEnc) {
+  var nc = sh.getLastColumn();
+  if (nc < 1) return 0;
+  var h = sh.getRange(filaEnc || 1, 1, 1, nc).getValues()[0], k = norm_(encabezado);
+  for (var i = 0; i < h.length; i++) { if (norm_(h[i]) === k) return i + 1; }
+  return 0;
+}
+
+/**
+ * Escribe `filas` (cada una en el orden de `enc`) en `sh` ubicando las columnas por encabezado.
+ * opts: { filaEnc: 1, clave: 'texto' }  clave = Script Property donde se recuerdan los encabezados que
+ * escribió el script, para limpiar una columna que ya no se genera (no deja datos viejos regados).
+ * Devuelve { col: {ENCABEZADO NORMALIZADO: nº de columna}, pos: [nº por cada enc], filaDatos: n }.
+ */
+function escribirPorEncabezado_(sh, enc, filas, opts) {
+  opts = opts || {};
+  // Encabezados vacíos o repetidos (copias del site) reciben un nombre único para no encimarse.
+  var vistos = {};
+  enc = enc.map(function (h, i) {
+    var t = String(h == null ? '' : h).trim() || ('COLUMNA ' + (i + 1)), k = norm_(t);
+    if (vistos[k]) { vistos[k]++; t = t + ' (' + vistos[k] + ')'; } else vistos[k] = 1;
+    return t;
+  });
+  var fe = opts.filaEnc || 1, ini = fe + 1;
+  var nc = Math.max(sh.getLastColumn(), 1);
+  var hdr = sh.getRange(fe, 1, 1, nc).getValues()[0];
+  var mapa = {}, fin = 0;
+  for (var i = 0; i < hdr.length; i++) {
+    var k = norm_(hdr[i]);
+    if (k) { if (mapa[k] === undefined) mapa[k] = i + 1; fin = i + 1; }
+  }
+  var pos = [], nuevas = [];
+  enc.forEach(function (h) {
+    var k = norm_(h);
+    if (mapa[k] === undefined) { fin++; mapa[k] = fin; nuevas.push([fin, h]); }
+    pos.push(mapa[k]);
+  });
+  if (sh.getMaxColumns() < fin) sh.insertColumnsAfter(sh.getMaxColumns(), fin - sh.getMaxColumns());
+  nuevas.forEach(function (x) { sh.getRange(fe, x[0]).setValue(x[1]).setFontWeight('bold'); });
+
+  // Columnas que el script escribía antes y ya no genera: se vacían (no se borran).
+  var sobrantes = [];
+  if (opts.clave) {
+    var antes = [];
+    try { antes = JSON.parse(prop_(opts.clave) || '[]'); } catch (e) { antes = []; }
+    var ahoraK = enc.map(norm_);
+    antes.forEach(function (k) { if (ahoraK.indexOf(k) < 0 && mapa[k] !== undefined) sobrantes.push(mapa[k]); });
+    setProp_(opts.clave, JSON.stringify(ahoraK));
+  }
+
+  var n0 = Math.max(sh.getLastRow(), fe), nf = filas.length;
+  var tope = Math.max(n0, fe + nf);
+  if (sh.getMaxRows() < tope) sh.insertRowsAfter(sh.getMaxRows(), tope - sh.getMaxRows());
+
+  // Tramos de columnas contiguas del script (normalmente uno solo).
+  var orden = pos.map(function (c, j) { return { c: c, j: j }; }).sort(function (a, b) { return a.c - b.c; });
+  var tramos = [], t = null;
+  orden.forEach(function (o) {
+    if (t && o.c === t.fin + 1) { t.fin = o.c; t.js.push(o.j); }
+    else { t = { ini: o.c, fin: o.c, js: [o.j] }; tramos.push(t); }
+  });
+  var letra = function (h) {
+    var c = mapa[norm_(h)];
+    if (!c) throw new Error('escribirPorEncabezado_: no hay columna "' + h + '" para armar una fórmula');
+    return letraCol_(c - 1);
+  };
+  var resolver = function (v) {
+    if (typeof v === 'string' && v.charAt(0) === '=' && v.indexOf('\u0001') >= 0) {
+      return v.replace(/\u0001([^\u0002]*)\u0002/g, function (m, h) { return letra(h); });
+    }
+    return v;
+  };
+  if (n0 >= ini) {
+    sobrantes.forEach(function (c) { sh.getRange(ini, c, n0 - ini + 1, 1).clearContent(); });
+    tramos.forEach(function (tr) { sh.getRange(ini, tr.ini, n0 - ini + 1, tr.fin - tr.ini + 1).clearContent(); });
+  }
+  if (nf) {
+    tramos.forEach(function (tr) {
+      var datos = filas.map(function (f) { return tr.js.map(function (j) { return resolver(f[j]); }); });
+      sh.getRange(ini, tr.ini, nf, tr.fin - tr.ini + 1).setValues(datos);
+    });
+  }
+  return { col: mapa, pos: pos, filaDatos: ini };
+}
+
+/**
+ * Formato de número "suave": solo se pone el formato por defecto en las celdas que están en General (o
+ * en `comoGeneral`, formatos viejos del script). Lo que ya tenga otro formato —el tuyo— no se toca; si la
+ * primera celda tiene un formato tuyo, ese mismo se extiende a las celdas en General (renglones nuevos).
+ * Devuelve cuántos tramos escribió.
+ */
+function formatoSuave_(sh, col, ini, n, porDefecto, comoGeneral) {
+  if (!col || !(n > 0)) return 0;
+  var fs = sh.getRange(ini, col, n, 1).getNumberFormats();
+  var libre = function (f) { return f === 'General' || f === '' || (comoGeneral && comoGeneral.indexOf(f) >= 0); };
+  var plantilla = libre(fs[0][0]) ? porDefecto : fs[0][0];
+  if (!plantilla || plantilla === 'General') return 0;
+  var tramos = 0, i = 0;
+  while (i < n) {
+    if (libre(fs[i][0]) && fs[i][0] !== plantilla) {
+      var j = i;
+      while (j + 1 < n && libre(fs[j + 1][0]) && fs[j + 1][0] !== plantilla) j++;
+      sh.getRange(ini + i, col, j - i + 1, 1).setNumberFormat(plantilla);
+      tramos++;
+      i = j + 1;
+    } else { i++; }
+  }
+  return tramos;
+}
+
+/** Formato de una columna del script (por encabezado) sin pisar el tuyo: ver formatoSuave_. */
+function formatoColumna_(sh, map, encabezado, n, porDefecto, filaDatos) {
+  var c = map.col[norm_(encabezado)];
+  if (!c || !(n > 0)) return;
+  formatoSuave_(sh, c, filaDatos || map.filaDatos || 2, n, porDefecto);
+}
+
+/**
+ * Lee las filas de datos de una hoja que tú llenas y devuelve cada fila con SOLO las columnas pedidas, en
+ * el orden de `enc`, ubicadas por encabezado (donde estén; puedes moverlas, insertar otras o cambiar el orden).
+ * Si un encabezado no aparece pero la columna de su posición original no es de otro encabezado pedido, se usa
+ * esa (compatibilidad con hojas viejas o con un título que cambiaste). Si no, queda ''.
+ */
+function leerPorEncabezado_(sh, enc, filaEnc) {
+  var fe = filaEnc || 1, n = sh.getLastRow(), nc = sh.getLastColumn();
+  if (n <= fe || nc < 1) return [];
+  var datos = sh.getRange(fe, 1, n - fe + 1, nc).getValues();
+  var m = mapaColumnas_(datos[0]);
+  var idx = enc.map(function (h) { var j = m[norm_(h)]; return j === undefined ? -1 : j; });
+  var tomadas = {};
+  idx.forEach(function (j) { if (j >= 0) tomadas[j] = true; });
+  var todos = idx.every(function (j) { return j < 0; });
+  idx = idx.map(function (j, i) {
+    if (j >= 0) return j;
+    return (todos || (i < nc && !tomadas[i] && !String(datos[0][i] || '').trim())) ? i : -1;
+  });
+  return datos.slice(1).map(function (r) { return idx.map(function (j) { return j < 0 ? '' : r[j]; }); });
 }
