@@ -1,24 +1,30 @@
 /**
- * VENTA DIARIA ODOO 2026 — Organizar el libro
+ * VENTA DIARIA ODOO 2026 — Organizar el libro (ordenar + limpiar + vigilar lo que no se usa)
  *
- * Pone orden en el libro: color de pestaña y posición por grupo, encabezado con el
- * mismo estilo, fila 1 congelada, una hoja "📑 Índice" (con link a cada hoja y para
- * qué sirve) y una "📖 Guía del menú" (una fila por opción del menú).
+ * Un solo botón del menú (🗂️ Ordenar hojas e índice) que:
+ *  1. BORRA hojas temporales y de respaldo (nombre con "respaldo", "_algo_tmp", "Copia de …").
+ *     Nunca borra hojas del sistema ni las del registro ORG_HOJAS.
+ *  2. Pone orden y color de pestaña por grupo (el orden sale de ORG_HOJAS).
+ *  3. Rehace "📑 Índice" (links, para qué sirve, filas, último cambio visto) y "📖 Guía del menú".
+ *  4. Unifica encabezados (fila 1) y formato de precio/fecha donde se indica.
+ *  5. Manda AL FINAL, con su propio color y sección, las hojas que parecen sin uso:
+ *     no están en el registro ni las usa el sistema (hojasProtegidas_) Y además están
+ *     vacías o llevan ORG_DIAS_SIN_USO días o más sin cambios. Esas NO se borran: tú decides
+ *     (clic derecho > Eliminar, o 🧹 Limpiar hojas que no uso… con respaldo).
  *
- * NO borra nada ni toca datos, fórmulas, filtros ni anchos de las hojas del sistema.
- * Solo:  color de pestaña y posición · estilo del encabezado (fila 1) · congelar la
- * fila 1 si no había nada congelado · formato de precio/fecha en las hojas de
- * ORG_CON_FORMATO · las dos hojas de guía (Índice y Guía, que se reescriben).
- * Lo que no está en el registro de abajo se deja donde estaba y sale en el Índice
- * como SIN CLASIFICAR.
+ * "Sin cambios" se mide con una huella de cada hoja (tamaño + primeras y últimas filas) guardada
+ * en Script Properties (ORG_VISTO) cada vez que corre Ordenar. Apps Script no guarda la fecha de
+ * última edición por hoja, así que cuenta desde la primera vez que Ordenar la vio.
  *
- * Menú: 🗂️ Ordenar hojas e índice (corre completo y avisa).
- * Hoja nueva → UNA línea en ORG_HOJAS.  Cambió el menú → cambia ORG_GUIA_MENU.
+ * Datos, fórmulas, filtros y anchos de las hojas del sistema NO se tocan.
+ * Hoja nueva que el código crea → UNA línea en ORG_HOJAS.  Cambió el menú → cambia ORG_GUIA_MENU.
  */
 
 var ORG_INDICE = '📑 Índice';
 var ORG_GUIA   = '📖 Guía del menú';
 var ORG_PROP_HUELLA = 'ORG_HUELLA';
+var ORG_PROP_VISTO  = 'ORG_VISTO';
+var ORG_DIAS_SIN_USO = 30;
 
 var ORG_GRUPOS = {
   GUIA:    { titulo: '📖 GUIA',                          color: '#00796b' },
@@ -26,7 +32,8 @@ var ORG_GRUPOS = {
   VENTAS:  { titulo: '🏬 VENTAS Y ALERTAS DE WALMART',    color: '#1a73e8' },
   PRECIOS: { titulo: '💲 PRECIOS MINIMOS',                color: '#188038' },
   SISTEMA: { titulo: '🛠️ SISTEMA',                        color: '#e37400' },
-  OCULTAS: { titulo: '🙈 OCULTAS (respaldos y temporales)', color: '#9aa0a6' }
+  OCULTAS: { titulo: '🙈 OCULTAS (a propósito)',          color: '#9aa0a6' },
+  SINUSO:  { titulo: '🗑️ POSIBLEMENTE SIN USO — revísalas y bórralas si no sirven', color: '#8d6e63' }
 };
 
 /** [nombre de hoja, grupo, para qué sirve, cómo se actualiza]. El orden de aquí es el orden del libro. */
@@ -76,7 +83,7 @@ var ORG_GUIA_MENU = [
   ['⚙️ Venta Diaria', '📊 Resumen de Walmart', 'Muestra un resumen de las ventas de Walmart.', 'Cuando quieras ver cómo va', 'A VECES'],
   ['⚙️ Venta Diaria', '🩺 Diagnóstico', 'Revisa que todo esté conectado y dice qué falta.', 'Si algo no baja', 'SOPORTE'],
   ['⚙️ Venta Diaria', '🧹 Limpiar hojas que no uso…', 'Te deja elegir hojas para borrar (con respaldo) o compactarlas.', 'Si el libro se acerca al límite de celdas', 'CUIDADO'],
-  ['⚙️ Venta Diaria', '🗂️ Ordenar hojas e índice', 'Pone colores, orden y encabezados iguales y rehace el Índice y esta guía. No borra nada.', 'Cuando aparezca una hoja nueva', 'A VECES'],
+  ['⚙️ Venta Diaria', '🗂️ Ordenar hojas e índice', 'Pone colores, orden y encabezados iguales, rehace el Índice y esta guía, BORRA respaldos y temporales, y manda al final (sin borrarlas) las hojas que parecen sin uso.', 'Cuando aparezca una hoja nueva o de vez en cuando', 'CUIDADO'],
   ['Configuración', '🔌 Configurar Odoo…', 'Guarda los datos de conexión a Odoo.', 'Una vez', 'SOPORTE'],
   ['Configuración', '🧪 Probar conexión a Odoo', 'Prueba que Odoo conteste.', 'Si algo no baja', 'SOPORTE'],
   ['Configuración', '⚙️ Configurar bandas de alerta de precios…', 'Cambia los cortes de DEJAR / REVISAR KAM / CAMBIO (3% y 10%).', 'Si quieres otros cortes', 'SOPORTE'],
@@ -102,22 +109,103 @@ function orgNorm_(t) {
     .toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
-/** Reintenta etapas que Sheets agota por tiempo (3 intentos, 5 s × n). Otros errores salen de una vez. */
+/** Reintenta etapas que Sheets agota por tiempo (4 intentos, 10 s × n). Otros errores salen de una vez. */
 function orgReintentar_(fn) {
   var ultimo;
-  for (var i = 1; i <= 3; i++) {
+  for (var i = 1; i <= 4; i++) {
     try { return fn(); }
     catch (e) {
       ultimo = e;
       if (!/tiempo|timed? ?out|agot|servicio hojas|service/i.test(String(e && e.message || e))) throw e;
-      Utilities.sleep(5000 * i);
+      Utilities.sleep(10000 * i);
     }
   }
   throw ultimo;
 }
 
-function orgGrupoOculta_(nombre) {
-  return /respaldo/i.test(nombre) || /^_.*tmp$/i.test(nombre);
+/** Temporal o respaldo: se BORRA al ordenar (si no es del sistema ni del registro). */
+function orgEsTemporal_(nombre) {
+  return /respaldo/i.test(nombre) || /^_.*tmp$/i.test(nombre) || /^copia de /i.test(nombre);
+}
+
+/** Hojas que el sistema usa: protegidas del proyecto + registro + las dos de guía. */
+function orgProtegidas_() {
+  var s = {};
+  try { hojasProtegidas_().forEach(function (n) { s[n] = true; }); } catch (e) {}
+  ORG_HOJAS.forEach(function (f) { s[f[0]] = true; });
+  s[ORG_INDICE] = true; s[ORG_GUIA] = true;
+  return s;
+}
+
+/** Borra temporales y respaldos. Devuelve los nombres borrados. */
+function orgLimpiar_(ss) {
+  var prot = orgProtegidas_(), quitadas = [];
+  ss.getSheets().forEach(function (h) {
+    var n = h.getName();
+    if (prot[n] || !orgEsTemporal_(n)) return;
+    if (ss.getSheets().length <= 1) return;
+    orgReintentar_(function () { ss.deleteSheet(h); });
+    quitadas.push(n);
+  });
+  return quitadas;
+}
+
+/** Huella barata de una hoja: tamaño + primeras y últimas filas. */
+function orgHuella_(h) {
+  var nF = h.getLastRow(), nCtot = h.getLastColumn(), nC = Math.min(nCtot, 40);
+  if (nF < 1 || nC < 1) return '0|0|0';
+  var txt = [];
+  h.getRange(1, 1, Math.min(2, nF), nC).getDisplayValues().forEach(function (f) { txt.push(f.join('\t')); });
+  if (nF > 2) {
+    var ini = Math.max(3, nF - 1);
+    h.getRange(ini, 1, nF - ini + 1, nC).getDisplayValues().forEach(function (f) { txt.push(f.join('\t')); });
+  }
+  var s = txt.join('\n'), x = 0;
+  for (var i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0;
+  return nF + '|' + nCtot + '|' + x;
+}
+
+function orgHoy_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
+
+function orgDias_(fecha) {
+  if (!fecha) return 0;
+  var a = String(fecha).split('-'), b = orgHoy_().split('-');
+  var d1 = Date.UTC(+a[0], +a[1] - 1, +a[2]), d2 = Date.UTC(+b[0], +b[1] - 1, +b[2]);
+  return Math.max(0, Math.round((d2 - d1) / 86400000));
+}
+
+/** Actualiza la huella de cada hoja y devuelve {nombre: {h, d (último cambio visto), p (primera vez vista)}}. */
+function orgVisto_(hojas) {
+  var props = PropertiesService.getScriptProperties();
+  var prev = {};
+  try { prev = JSON.parse(props.getProperty(ORG_PROP_VISTO) || '{}'); } catch (e) {}
+  var hoy = orgHoy_(), out = {}, limite = new Date().getTime() + 120 * 1000;
+  hojas.forEach(function (h) {
+    var n = h.getName(), a = prev[n];
+    if (new Date().getTime() > limite) { out[n] = a || { h: '', d: hoy, p: hoy }; return; }
+    var hu;
+    try { hu = orgReintentar_(function () { return orgHuella_(h); }); }
+    catch (e) { out[n] = a || { h: '', d: hoy, p: hoy }; return; }
+    if (!a) out[n] = { h: hu, d: hoy, p: hoy };
+    else if (a.h !== hu) out[n] = { h: hu, d: hoy, p: a.p || hoy };
+    else out[n] = a;
+  });
+  props.setProperty(ORG_PROP_VISTO, JSON.stringify(out));
+  return out;
+}
+
+/** Hojas que ni el sistema ni el registro conocen Y están vacías o llevan ORG_DIAS_SIN_USO días sin cambios. {nombre: motivo} */
+function orgSinUso_(hojas, prot, visto) {
+  var res = {};
+  hojas.forEach(function (h) {
+    var n = h.getName();
+    if (prot[n]) return;
+    var v = visto[n];
+    if (h.getLastRow() < 2) { res[n] = 'vacía'; return; }
+    var dias = v ? orgDias_(v.d) : 0;
+    if (dias >= ORG_DIAS_SIN_USO) res[n] = 'sin cambios hace ' + dias + ' días';
+  });
+  return res;
 }
 
 /** Recorta una hoja nueva para no gastar celdas del libro (tope de 10 millones). */
@@ -191,102 +279,108 @@ function orgFormatosHoja_(h) {
   return total;
 }
 
-/** Menú: ordena por etapas (cada una con su reintento) y avisa. Se puede repetir: retoma donde se quedó. */
+/** Menú: limpia, ordena y avisa. */
 function orgOrdenar() {
   var ui = SpreadsheetApp.getUi();
-  var r = orgAplicar_(true);
-  var txt = r.ordenadas + ' hojas con color y orden.\n' +
+  var avisos = [], r = null, quitadas = [];
+  try { quitadas = orgLimpiar_(SpreadsheetApp.getActive()); } catch (e) { avisos.push('Limpieza de respaldos: ' + e.message); }
+  try { r = orgAplicar_(true); } catch (e) { avisos.push('Orden/índice: ' + e.message); }
+  if (!r) {
+    ui.alert('🗂️ Ordenar hojas', 'No terminó:\n  ' + avisos.join('\n  ') +
+      (quitadas.length ? '\n\nYa borré: ' + quitadas.join(', ') : '') +
+      '\n\nEs Sheets ocupado (corridas automáticas). Espera 2 minutos sin tocar el libro y vuelve a correrlo: retoma donde se quedó.', ui.ButtonSet.OK);
+    return;
+  }
+  var falt = (orgFormatos_.fallas || []);
+  if (falt.length) avisos.push('Formatos pendientes en: ' + falt.join(', ') + ' (vuelve a correrlo y los termina)');
+  var sinUso = Object.keys(r.sinUso);
+  ui.alert('🗂️ Libro ordenado',
+    r.ordenadas + ' hojas con color y orden.\n' +
     r.encabezados + ' encabezados unificados.\n' +
     r.formatos + ' columnas de precio/fecha con formato unificado.\n' +
     'Índice: hoja "' + ORG_INDICE + '" (la primera).\n' +
+    (quitadas.length ? '\nBORRADAS (respaldos/temporales):\n  ' + quitadas.join('\n  ') + '\n' : '\nNo había respaldos ni temporales que borrar.\n') +
+    (sinUso.length
+      ? '\nPOSIBLEMENTE SIN USO (las mandé al final, NO las borré):\n  ' + sinUso.map(function (n) { return n + ' — ' + r.sinUso[n]; }).join('\n  ') + '\n'
+      : '\nNinguna hoja parece sin uso (se vigilan cambios desde hoy; salen a los ' + ORG_DIAS_SIN_USO + ' días).\n') +
     (r.sinClasificar.length
-      ? '\nSIN CLASIFICAR (no están en el registro, las dejé donde estaban):\n  ' + r.sinClasificar.join('\n  ')
-      : '\nNo quedó ninguna hoja sin clasificar.');
-  if (r.fallas.length) {
-    txt += '\n\n⚠ Quedó pendiente (Sheets ocupado por las corridas automáticas):\n  ' + r.fallas.join('\n  ') +
-      '\nEspera 2 minutos sin tocar el libro y vuelve a correr "Ordenar hojas": retoma lo que falta.';
-  }
-  ui.alert(r.fallas.length ? '🗂️ Libro ordenado (incompleto)' : '🗂️ Libro ordenado', txt, ui.ButtonSet.OK);
+      ? '\nSIN CLASIFICAR (nuevas, no están en el registro; las dejé donde estaban):\n  ' + r.sinClasificar.join('\n  ') + '\n'
+      : '') +
+    (avisos.length ? '\n⚠ ' + avisos.join('\n⚠ ') : ''),
+    ui.ButtonSet.OK);
 }
 
 function orgAplicar_(completo) {
   var ss = SpreadsheetApp.getActive();
-  var resumen = { ordenadas: 0, encabezados: 0, formatos: 0, sinClasificar: [], fallas: [] };
-  var t0 = new Date().getTime();
-  var ctx = {};
+  var porNombre = {};
+  ss.getSheets().forEach(function (h) { porNombre[h.getName()] = h; });
 
-  var etapa = function (nombre, fn) {
-    if (new Date().getTime() - t0 > 270 * 1000) { resumen.fallas.push(nombre + ' (sin tiempo)'); return false; }
-    try { orgReintentar_(fn); return true; }
-    catch (e) { resumen.fallas.push(nombre + ': ' + String(e && e.message || e).substring(0, 80)); return false; }
-  };
-  var leer = function () {
-    ctx.hojas = ss.getSheets();
-    ctx.por = {};
-    ctx.hojas.forEach(function (h) { ctx.por[h.getName()] = h; });
-    ctx.reg = {};
-    ORG_HOJAS.forEach(function (f) { ctx.reg[f[0]] = { grupo: f[1], desc: f[2], act: f[3] }; });
-    ctx.ocultas = []; ctx.sinClas = [];
-    ctx.hojas.forEach(function (h) {
-      var n = h.getName();
-      if (n === ORG_INDICE || n === ORG_GUIA || ctx.reg[n]) return;
-      if (orgGrupoOculta_(n) || h.isSheetHidden()) { ctx.ocultas.push(n); return; }
-      ctx.sinClas.push(n);
-    });
-    ctx.ocultas.sort();
-    resumen.sinClasificar = ctx.sinClas;
-  };
+  var reg = {};
+  ORG_HOJAS.forEach(function (f) { reg[f[0]] = { grupo: f[1], desc: f[2], act: f[3] }; });
+  var prot = orgProtegidas_();
 
-  if (!etapa('Leer libro', leer)) return resumen;
-  etapa('Hoja Guía del menú', function () { orgGuia_(ss); });
-  etapa('Hoja Índice (crear)', function () { if (!ss.getSheetByName(ORG_INDICE)) ss.insertSheet(ORG_INDICE); });
-  etapa('Leer libro (2)', leer);
+  var ind = porNombre[ORG_INDICE] || ss.insertSheet(ORG_INDICE);
+  porNombre[ORG_INDICE] = ind;
+  if (!porNombre[ORG_GUIA]) porNombre[ORG_GUIA] = ss.insertSheet(ORG_GUIA);
 
-  etapa('Orden y colores', function () {
-    var deseado = [ORG_INDICE];
-    ORG_HOJAS.forEach(function (f) { if (ctx.por[f[0]]) deseado.push(f[0]); });
-    ctx.sinClas.forEach(function (n) { deseado.push(n); });
-    ctx.ocultas.forEach(function (n) { deseado.push(n); });
-    var cont = 0;
-    deseado.forEach(function (n, i) {
-      var h = ctx.por[n];
-      if (!h || h.isSheetHidden()) return;
-      if (h.getIndex() !== i + 1) { ss.setActiveSheet(h); ss.moveActiveSheet(i + 1); }
-    });
-    deseado.forEach(function (n) {
-      var h = ctx.por[n];
-      if (!h) return;
-      var c = null;
-      if (n === ORG_INDICE) c = '#202124';
-      else if (ctx.reg[n]) c = ORG_GRUPOS[ctx.reg[n].grupo].color;
-      else if (ctx.ocultas.indexOf(n) !== -1) c = ORG_GRUPOS.OCULTAS.color;
-      try { h.setTabColor(c); } catch (e) {}
-      cont++;
-    });
-    resumen.ordenadas = cont;
-    if (ctx.por[ORG_INDICE]) ss.setActiveSheet(ctx.por[ORG_INDICE]);
-    PropertiesService.getScriptProperties().setProperty(ORG_PROP_HUELLA, deseado.join('|'));
+  var visto = completo ? orgVisto_(ss.getSheets()) : {};
+  var sinUso = completo ? orgSinUso_(ss.getSheets(), prot, visto) : {};
+
+  var ocultas = [], sinClas = [], sinUsoL = [], sistema = [];
+  ss.getSheets().forEach(function (h) {
+    var n = h.getName();
+    if (n === ORG_INDICE || n === ORG_GUIA || reg[n]) return;
+    if (sinUso[n]) { sinUsoL.push(n); return; }
+    if (h.isSheetHidden()) { ocultas.push(n); return; }
+    if (prot[n]) { sistema.push(n); return; }
+    sinClas.push(n);
   });
 
-  etapa('Contenido del Índice', function () {
-    orgIndice_(ctx.por[ORG_INDICE], ctx.reg, ctx.por, ctx.sinClas, ctx.ocultas);
+  var deseado = [ORG_INDICE];
+  ORG_HOJAS.forEach(function (f) { if (ss.getSheetByName(f[0])) deseado.push(f[0]); });
+  sistema.forEach(function (n) { deseado.push(n); });
+  sinClas.forEach(function (n) { deseado.push(n); });
+  ocultas.sort().forEach(function (n) { deseado.push(n); });
+  sinUsoL.sort().forEach(function (n) { deseado.push(n); });
+
+  var resumen = { ordenadas: 0, encabezados: 0, formatos: 0, sinClasificar: sinClas, sinUso: sinUso };
+
+  deseado.forEach(function (n, i) {
+    var h = ss.getSheetByName(n);
+    if (!h || h.isSheetHidden()) return;
+    if (h.getIndex() !== i + 1) {
+      orgReintentar_(function () { ss.setActiveSheet(h); ss.moveActiveSheet(i + 1); });
+      SpreadsheetApp.flush();
+    }
   });
+  orgReintentar_(function () { ss.setActiveSheet(ind); });
+
+  deseado.forEach(function (n) {
+    var h = ss.getSheetByName(n);
+    if (!h) return;
+    var c = null;
+    if (n === ORG_INDICE) c = '#202124';
+    else if (reg[n]) c = ORG_GRUPOS[reg[n].grupo].color;
+    else if (sinUso[n]) c = ORG_GRUPOS.SINUSO.color;
+    else if (ocultas.indexOf(n) !== -1) c = ORG_GRUPOS.OCULTAS.color;
+    try {
+      var act = h.getTabColor();
+      if ((act || null) !== c) orgReintentar_(function () { h.setTabColor(c); });
+    } catch (e) {}
+    resumen.ordenadas++;
+  });
+
+  orgReintentar_(function () { orgGuia_(ss); });
+  SpreadsheetApp.flush();
+  orgReintentar_(function () { orgIndice_(ind, ss, sinClas.concat(sistema), ocultas, sinUso, visto); });
+  PropertiesService.getScriptProperties().setProperty(ORG_PROP_HUELLA, deseado.join('|'));
 
   ORG_HOJAS.forEach(function (f) {
-    var h = ctx.por[f[0]];
+    var h = ss.getSheetByName(f[0]);
     if (!h || ORG_SIN_ENCABEZADO.indexOf(f[0]) !== -1) return;
-    etapa('Encabezado ' + f[0], function () {
-      if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
-    });
+    if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
   });
-
-  if (completo) {
-    ORG_CON_FORMATO.forEach(function (n) {
-      var h = ctx.por[n];
-      if (!h) return;
-      etapa('Formato ' + n, function () { resumen.formatos += orgFormatosHoja_(h); });
-    });
-  }
+  resumen.formatos = completo ? orgFormatos_(ss) : 0;
   return resumen;
 }
 
@@ -305,39 +399,51 @@ function orgEncabezado_(h, color, forzar) {
   return cambio;
 }
 
-function orgIndice_(ind, reg, porNombre, sinClas, ocultas) {
+function orgUltimo_(visto, n) {
+  var v = visto && visto[n];
+  if (!v) return '';
+  return v.d + (v.d === v.p ? ' (desde que la vigilo)' : '');
+}
+
+function orgIndice_(ind, ss, otras, ocultas, sinUso, visto) {
   ind.clear();
   var tz = Session.getScriptTimeZone();
   var filas = [], banners = [];
+  var hoja = function (n) { return ss.getSheetByName(n); };
+  var link = function (n) { return '=HYPERLINK("#gid=' + hoja(n).getSheetId() + '","' + n.replace(/"/g, '""') + '")'; };
+  var nFilas = function (n) { return Math.max(hoja(n).getLastRow() - 1, 0); };
+
   filas.push(['📑 ÍNDICE DEL LIBRO', '', '', '', '']);
   filas.push(['Actualizado ' + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm') + '. Da clic en el nombre para ir a la hoja.', '', '', '', '']);
   filas.push(['', '', '', '', '']);
 
   ['GUIA', 'KILLERS', 'VENTAS', 'PRECIOS', 'SISTEMA'].forEach(function (k) {
-    var items = ORG_HOJAS.filter(function (f) { return f[1] === k && porNombre[f[0]]; });
+    var items = ORG_HOJAS.filter(function (f) { return f[1] === k && hoja(f[0]); });
     if (!items.length) return;
-    filas.push([ORG_GRUPOS[k].titulo, 'PARA QUE SIRVE', 'SE ACTUALIZA', 'FILAS', '']);
+    filas.push([ORG_GRUPOS[k].titulo, 'PARA QUE SIRVE', 'SE ACTUALIZA', 'FILAS', 'ULTIMO CAMBIO VISTO']);
     banners.push({ fila: filas.length, color: ORG_GRUPOS[k].color });
     items.forEach(function (f) {
-      var h = porNombre[f[0]];
-      filas.push(['=HYPERLINK("#gid=' + h.getSheetId() + '","' + f[0].replace(/"/g, '""') + '")', f[2], f[3], Math.max(h.getLastRow() - 1, 0), '']);
+      filas.push([link(f[0]), f[2], f[3], nFilas(f[0]), orgUltimo_(visto, f[0])]);
     });
     filas.push(['', '', '', '', '']);
   });
-  if (sinClas.length) {
-    filas.push(['❓ SIN CLASIFICAR', 'No están en el registro de Organizar.gs', '', 'FILAS', '']);
+  if (otras.length) {
+    filas.push(['❓ OTRAS (no están en el registro de Organizar.gs)', '', '', 'FILAS', 'ULTIMO CAMBIO VISTO']);
     banners.push({ fila: filas.length, color: '#202124' });
-    sinClas.forEach(function (n) {
-      filas.push(['=HYPERLINK("#gid=' + porNombre[n].getSheetId() + '","' + n.replace(/"/g, '""') + '")', '', '', Math.max(porNombre[n].getLastRow() - 1, 0), '']);
-    });
+    otras.forEach(function (n) { filas.push([link(n), '', '', nFilas(n), orgUltimo_(visto, n)]); });
     filas.push(['', '', '', '', '']);
   }
   if (ocultas.length) {
     filas.push([ORG_GRUPOS.OCULTAS.titulo, '', '', 'FILAS', '']);
     banners.push({ fila: filas.length, color: ORG_GRUPOS.OCULTAS.color });
-    ocultas.forEach(function (n) {
-      filas.push([n, 'Oculta a propósito (clic derecho > Mostrar hoja si la necesitas)', '', Math.max(porNombre[n].getLastRow() - 1, 0), '']);
-    });
+    ocultas.forEach(function (n) { filas.push([n, 'Oculta a propósito (clic derecho > Mostrar hoja si la necesitas)', '', nFilas(n), orgUltimo_(visto, n)]); });
+    filas.push(['', '', '', '', '']);
+  }
+  var su = Object.keys(sinUso).sort();
+  if (su.length) {
+    filas.push([ORG_GRUPOS.SINUSO.titulo, 'MOTIVO', '', 'FILAS', 'ULTIMO CAMBIO VISTO']);
+    banners.push({ fila: filas.length, color: ORG_GRUPOS.SINUSO.color });
+    su.forEach(function (n) { filas.push([link(n), sinUso[n], 'No se borra sola', nFilas(n), orgUltimo_(visto, n)]); });
   }
 
   var nF = filas.length;
@@ -352,10 +458,10 @@ function orgIndice_(ind, reg, porNombre, sinClas, ocultas) {
   ind.getRange(1, 1).setFontSize(16).setFontWeight('bold');
   ind.getRange(2, 1).setFontColor('#5f6368').setFontStyle('italic');
   banners.forEach(function (b) {
-    ind.getRange(b.fila, 1, 1, 4).setBackground(b.color).setFontColor('#ffffff').setFontWeight('bold');
+    ind.getRange(b.fila, 1, 1, 5).setBackground(b.color).setFontColor('#ffffff').setFontWeight('bold');
   });
   ind.getRange(1, 4, nF, 1).setHorizontalAlignment('right').setNumberFormat('#,##0');
-  ind.setColumnWidth(1, 300); ind.setColumnWidth(2, 560); ind.setColumnWidth(3, 220); ind.setColumnWidth(4, 80);
+  ind.setColumnWidth(1, 300); ind.setColumnWidth(2, 560); ind.setColumnWidth(3, 220); ind.setColumnWidth(4, 80); ind.setColumnWidth(5, 210);
   ind.setFrozenRows(0);
   ind.setHiddenGridlines(true);
   orgRecortar_(ind, nF + 5, 5);
