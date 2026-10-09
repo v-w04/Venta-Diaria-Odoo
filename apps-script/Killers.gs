@@ -1033,7 +1033,7 @@ function reconstruirActivos_() {
   var bm = null, nBajo = 0;
   try { bm = bajoMinimoDelSite_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Killers bajo minimo', { error: String(e && e.message || e) }); }
   // % PERDIDA del site para mostrarlo en la columna AC de ACTIVOS (vacío = no está en Killers bajo minimo).
-  var perdidaSite_ = function (sku) { var e = bm && bm.skus[sku]; return e ? Math.round(e.perdida * 10) / 1000 : ''; };
+  var perdidaSite_ = function (sku) { var e = bm && bm.skus[sku]; return e ? e.perdida / 100 : ''; };
   var sinBajo = function (sku) {
     var e = bm && bm.skus[sku];
     if (e && e.perdida > bm.tope + 0.0001) { nBajo++; return false; }
@@ -1252,7 +1252,8 @@ function formatoActivos_(sh, n) {
   f(7, '0.0%');
   [9, 10, 11].forEach(function (c) { f(c, 'dd/MM/yyyy HH:mm'); });
   [12, 14, 23].forEach(function (c) { f(c, '0.0%'); });
-  f(29, '0.0%');   // AC % PERDIDA (site)
+  f(29, '0.00%');   // AC % PERDIDA (site), igual que la copia
+  try { bmColorPerdida_(sh, 29); } catch (e) { logWarn_('KILLERS', 'No se pudo poner el color de % PERDIDA', { error: String(e && e.message || e) }); }   // rojo tenue si pasa de 3%, verde tenue si es aceptable
 }
 
 // ── Reporte por mes ───────────────────────────────────────────────────────

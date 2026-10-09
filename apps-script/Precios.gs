@@ -356,7 +356,43 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
     }
   }
 
+  // 3) Killer que está en KILLERS BAJO MINIMO (Site Sheet) con pérdida de 3% o menos: está dentro del
+  //    rango aceptable, no es alerta. Los de más de 3% SÍ siguen alertando.
+  var acept = null;
+  try { acept = bajoMinimoAceptable_(s); } catch (e) { acept = null; }
+  if (acept) {
+    return [min, base, tipo, origen, 'KILLER', dif, pct, 'KILLER',
+            nota('Bajo mínimo aceptable: pierde ' + (Math.round(acept.perdida * 10) / 10) + '% (tope ' + acept.tope + '%)')];
+  }
+
   return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', notaAsig];
+}
+
+/**
+ * KILLERS BAJO MINIMO (copia de Site Sheet) indexada por SKU exacto y por SKU base, leída una vez por corrida.
+ * Devuelve { perdida, tope } si el SKU está en esa lista con pérdida <= tope (aceptable); si no, null.
+ * Por SKU base se toma la pérdida MÁS ALTA de sus variantes (si alguna pasa del tope, no es aceptable).
+ */
+function bajoMinimoAceptable_(sku) {
+  if (bajoMinimoAceptable_.m === undefined) {
+    var m = { ex: {}, base: {}, tope: 3 };
+    try {
+      var bm = bajoMinimoDelSite_();
+      if (bm) {
+        m.tope = bm.tope;
+        Object.keys(bm.skus).forEach(function (k) {
+          var p = bm.skus[k].perdida, b = skuBase_(k);
+          m.ex[k] = p;
+          if (m.base[b] === undefined || p > m.base[b]) m.base[b] = p;
+        });
+      }
+    } catch (e) { m = { ex: {}, base: {}, tope: 3 }; }
+    bajoMinimoAceptable_.m = m;
+  }
+  var mm = bajoMinimoAceptable_.m, s = sku_(sku);
+  var p = mm.ex[s] !== undefined ? mm.ex[s] : mm.base[skuBase_(s)];
+  if (p === undefined || isNaN(p) || p > mm.tope + 0.0001) return null;
+  return { perdida: p, tope: mm.tope };
 }
 
 /** Lista de promociones del site, leída una sola vez por corrida. */

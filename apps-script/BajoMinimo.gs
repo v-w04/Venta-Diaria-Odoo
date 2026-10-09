@@ -95,6 +95,9 @@ function bmGuardarEspejo_(todo) {
     sh.getRange(1, 1, 1, todo[0].length).setFontWeight('bold');
     sh.setFrozenRows(1);
     sh.getRange(todo.length + 2, 1).setValue('Copia de Site Sheet · ' + ahora_());
+    var cPer = -1;
+    enc.forEach(function (x, i) { if (cPer < 0 && norm_(x).indexOf('PERDIDA') >= 0) cPer = i + 1; });
+    if (cPer > 0) { try { bmColorPerdida_(sh, cPer); } catch (e2) { logWarn_('BAJO MINIMO', 'No se pudo poner el color de % PERDIDA', { error: String(e2 && e2.message || e2) }); } }
   } catch (e) {
     ksAvisarUnaVez_('bm_espejo', function () {
       logWarn_('BAJO MINIMO', 'No se pudo guardar la copia local', { error: String(e && e.message || e) });
@@ -156,4 +159,31 @@ function sincronizarBajoMinimo_() {
   } catch (e) {
     logWarn_('BAJO MINIMO', 'No se pudo refrescar', { error: String(e && e.message || e) });
   }
+}
+
+/**
+ * Formato condicional de una columna de % PERDIDA: rojo tenue si pasa del tope (3%), verde tenue si es
+ * aceptable (tope o menos). Acepta fracción (0.0295) o porcentaje (2.95). Reemplaza solo sus propias reglas.
+ */
+function bmColorPerdida_(sh, col) {
+  var ROJO = '#f4cccc', VERDE = '#d9ead3';
+  var n = Math.max(sh.getMaxRows() - 1, 1);
+  var rango = sh.getRange(2, col, n, 1);
+  var letra = rango.getA1Notation().replace(/\d+/g, '').split(':')[0];
+  var celda = letra + '2';
+  var val = 'IF(ABS(' + celda + ')<=1,' + celda + '*100,' + celda + ')';
+  var tope = bmTope_();
+  var propias = function (r) {
+    var cond = r.getBooleanCondition();
+    var bg = cond && cond.getBackgroundObject && cond.getBackgroundObject();
+    var c = bg ? String(bg.asRgbColor().asHexString()).toLowerCase() : '';
+    var rs = r.getRanges();
+    return rs.length === 1 && rs[0].getColumn() === col && (c === ROJO || c === VERDE);
+  };
+  var reglas = sh.getConditionalFormatRules().filter(function (r) { return !propias(r); });
+  reglas.push(SpreadsheetApp.newConditionalFormatRule().setRanges([rango])
+    .whenFormulaSatisfied('=AND(ISNUMBER(' + celda + '),' + val + '>' + tope + ')').setBackground(ROJO).build());
+  reglas.push(SpreadsheetApp.newConditionalFormatRule().setRanges([rango])
+    .whenFormulaSatisfied('=AND(ISNUMBER(' + celda + '),' + val + '<=' + tope + ')').setBackground(VERDE).build());
+  sh.setConditionalFormatRules(reglas);
 }
