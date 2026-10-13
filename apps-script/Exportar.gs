@@ -14,7 +14,8 @@
  *   2. Un SKU publicado que es el general (o general-2…-9) toma el precio CLÁSICA.
  *      Uno que es general-MSI (o general-MSI-2…-9) toma el precio PREMIUM.
  *   3. PRECIOS VARIACIONES (precios manuales por SKU publicado) se agregan al final y ganan.
- *      Una variación sin precio o con #N/A se convierte en 0.
+ *      Una variación sin precio o con #N/A se convierte en 0, pero NUNCA pisa un precio normal bueno
+ *      (si el SKU ya tiene precio, esa variación se omite).
  *   4. EXPORTAR: sin repetidos (si una llave sale dos veces gana la última).
  *      PRECIO -2% = precio × 0.98 · PRECIO CARGA = INT(-2% / 10) × 10 + 9 (si el precio es 0, la carga es 0).
  *
@@ -83,10 +84,15 @@ function exArmar_(inv, precios, vars, esExportar) {
     }
   }
   var pares = J.concat(N);
+  // Una variación SIN precio (0) nunca pisa un precio normal bueno: si el SKU ya tiene precio, se omite;
+  // si no tiene, entra con 0.
+  var conPrecio = Object.create(null);
+  pares.forEach(function (q) { if (typeof q[1] === 'number' && q[1] > 0) conPrecio[q[0].toLowerCase()] = true; });
   for (var v = 0; v < vars.length; v++) {
     var llave = vars[v][0];
     if (llave === '' || llave === null || llave === undefined) continue;
     var p = vars[v][1];
+    if (!(typeof p === 'number' && p > 0) && conPrecio[String(llave).toLowerCase()]) continue;
     pares.push([String(llave), p]);
   }
   var R = [], S = [];
