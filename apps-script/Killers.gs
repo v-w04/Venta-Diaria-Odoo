@@ -1043,11 +1043,17 @@ function reconstruirActivos_() {
   var bm = null, nBajo = 0;
   try { bm = bajoMinimoDelSite_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Killers bajo minimo', { error: String(e && e.message || e) }); }
   // % PERDIDA del site para mostrarlo en la columna AC de ACTIVOS (vacío = no está en Killers bajo minimo).
-  var perdidaSite_ = function (sku, r) {
+  var promosPL = null, pcPL = null;
+  try { promosPL = promosDelSite_(); } catch (e) { promosPL = null; }
+  try { pcPL = promosCategoria_(); } catch (e) { pcPL = null; }
+  var perdidaSite_ = function (sku, r, kam, esPromoCat) {
     var e = bm && bm.skus[sku];
-    if (e) return e.perdida / 100;
-    // No está en Killers bajo minimo: se calcula con la misma idea (cuánto falta del PAGAN para el mínimo; 0 si lo cubre).
-    return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + '),' + X('PRECIO', r) + '>0),MAX(0,(' + X('PRECIO', r) + '-' + X('PAGAN', r) + ')/' + X('PRECIO', r) + '),"")';
+    if (e) return e.perdida / 100;           // ya viene con la promoción descontada (BajoMinimo.gs)
+    // No está en Killers bajo minimo: misma idea contra mínimo − puntos de la promo (como COMPARAR WALMART); 0 si lo cubre.
+    var red = 0;
+    if (!esPromoCat) { try { red = cwPuntosPromo_(sku, kam || '', promosPL, pcPL) || 0; } catch (e3) { red = 0; } }
+    var mn = X('PRECIO', r) + (red > 0 ? '*' + (1 - red) : '');
+    return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + '),' + X('PRECIO', r) + '>0),MAX(0,(' + mn + '-' + X('PAGAN', r) + ')/(' + mn + ')),"")';
   };
   var sinBajo = function (sku) {
     var e = bm && bm.skus[sku];
@@ -1110,7 +1116,7 @@ function reconstruirActivos_() {
       k.general, llave,                                                 // U V
       pr.normal, promo ? Math.round(pr.red * 1000) / 10 : '',          // W X (puntos)
       k.origen, sel.estado, k.carga, otros,                             // Y–AB
-      perdidaSite_(k.sku, r)                                               // AC % PERDIDA (confirmación visual)
+      perdidaSite_(k.sku, r, cat, false)                                               // AC % PERDIDA (confirmación visual)
     ]);
   };
 
@@ -1155,7 +1161,7 @@ function reconstruirActivos_() {
       skuBase_(p.sku), llave, normal, Math.round(info.red * 1000) / 10,  // U V W X
       'PROMO CATEGORIA', 'VIGENTE', info.origen,
       (info.red > 0) ? 'Mínimo − promo' : 'Mínimo', // Y–AB
-      perdidaSite_(p.sku, r)                                               // AC % PERDIDA
+      perdidaSite_(p.sku, r, p.depto, true)                                               // AC % PERDIDA
     ]);
   };
 

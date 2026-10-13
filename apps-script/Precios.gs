@@ -502,6 +502,8 @@ function revisarPreciosAuto() {
     // Cotejo automático de KILLERS ACTIVOS contra los precios reales de Walmart
     // (dashboard). Solo reescribe COMPARAR WALMART si cambió algo.
     compararWalmartAuto_();
+    // EXPORTAR / MINIMO / MAXIMO (lógica de CAMBIO DE PRECIOS): solo escribe si algo cambió. Ver Exportar.gs.
+    exportarPreciosAuto_();
   } catch (e) {
     logError_('PRECIOS', e);
   } finally {

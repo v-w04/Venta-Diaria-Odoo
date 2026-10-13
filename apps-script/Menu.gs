@@ -13,6 +13,7 @@ function onOpen() {
   ui.createMenu('⚙️ Venta Diaria')
       .addItem('🔄 Importar ventas de Odoo ahora', 'importarVentasAhora')
       .addItem('💲 Actualizar PRECIOS ERIK desde Site Sheet', 'actualizarPreciosMinimos')
+      .addItem('📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'exportarPreciosWalmart')
       .addItem('🔄 Traer killers de Site Sheet y actualizar KILLERS ACTIVOS', 'actualizarActivos')
       .addItem('🎯 Procesar killers pegados (respaldo manual)', 'procesarKillers')
       .addItem('📅 Reporte de killers del mes', 'reporteKillersMes')

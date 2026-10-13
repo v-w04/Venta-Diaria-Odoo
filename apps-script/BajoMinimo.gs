@@ -116,8 +116,13 @@ function bajoMinimoDelSite_() {
     logWarn_('BAJO MINIMO', 'La hoja no trae una columna SKU WALMART que reconozca', { encabezados: t.enc });
     return null;
   }
-  var iCat = m[norm_('CATEGORIA')];
+  var iCat = m[norm_('CATEGORIA')], iKam = m[norm_('CATEGORIA KAM')];
   var out = { skus: {}, n: 0, tope: bmTope_(), origen: t.origen };
+  // El site NO descuenta la promoción de comisión en su mínimo. Aquí sí: el % PERDIDA se recalcula contra
+  // mínimo − puntos de la promo (misma regla que COMPARAR WALMART), para no descartar killers que en realidad cubren.
+  var promos = null, pc = null;
+  try { promos = promosDelSite_(); } catch (e0) { promos = null; }
+  try { pc = promosCategoria_(); } catch (e1) { pc = null; }
   t.datos.forEach(function (f) {
     var s = sku_(f[iSku]);
     if (!s || /^COPIA DE SITE SHEET/.test(String(f[iSku] || '').toUpperCase())) return;
@@ -125,7 +130,14 @@ function bajoMinimoDelSite_() {
     var fal = iFal === undefined ? 0 : bmNumero_(f[iFal]), mn = iMin === undefined ? 0 : bmNumero_(f[iMin]);
     if (isNaN(per)) per = mn > 0 ? fal / mn * 100 : NaN;
     if (isNaN(per)) return;
-    out.skus[s] = { perdida: per, falta: fal, minimo: mn, cat: iCat === undefined ? '' : String(f[iCat] || '') };
+    var perSite = per, red = 0;
+    var kamTxt = iKam !== undefined && f[iKam] ? String(f[iKam]) : (iCat === undefined ? '' : String(f[iCat] || ''));
+    try { red = cwPuntosPromo_(s, kamTxt, promos, pc) || 0; } catch (e2) { red = 0; }
+    if (red > 0 && mn > 0) {
+      var mAdj = mn * (1 - red);
+      per = Math.max(0, (mAdj - (mn - fal)) / mAdj * 100);
+    }
+    out.skus[s] = { perdida: per, perdidaSite: perSite, promo: red, falta: fal, minimo: mn, cat: iCat === undefined ? '' : String(f[iCat] || '') };
     out.n++;
   });
   return out;
