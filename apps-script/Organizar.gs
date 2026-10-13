@@ -64,10 +64,10 @@ var ORG_HOJAS = [
   ['Sobreventa Pick',      'VENTAS',  'Traslados en espera de pick (sobreventa)', 'Auto, cada 30 min'],
 
   ['PRECIOS ERIK',         'PRECIOS', 'Precio mínimo clásica y premium (EM y CVA) bajado de Site Sheet', 'Auto, cada 15 min'],
-  ['EXPORTAR',             'PRECIOS', 'Precios normales listos para subir a Walmart: R = SKU, S = precio, U = precio de carga (S × 0.98 y terminación 9)', 'Auto, cada 15 min'],
-  ['MINIMO',               'PRECIOS', 'Precios mínimos para subir a Walmart: R = SKU, S = precio', 'Auto, cada 15 min'],
-  ['MAXIMO',               'PRECIOS', 'Precios máximos para subir a Walmart: R = SKU, S = precio', 'Auto, cada 15 min'],
-  ['PRECIOS VARIACIONES',  'PRECIOS', 'Precios manuales por SKU publicado (IMPORTRANGE de tu otro libro). Ganan sobre el precio normal en EXPORTAR, MINIMO y MAXIMO', 'Auto (IMPORTRANGE)'],
+  ['EXPORTAR',             'PRECIOS', 'Precios normales para subir a Walmart: SKU WALMART, PRECIO FINAL, PRECIO -2% (× 0.98) y PRECIO CARGA (terminación 9)', 'Auto, cada 15 min'],
+  ['MINIMO',               'PRECIOS', 'Precios mínimos para subir a Walmart: SKU WALMART y PRECIO MINIMO', 'Auto, cada 15 min'],
+  ['MAXIMO',               'PRECIOS', 'Precios máximos para subir a Walmart: SKU WALMART y PRECIO MAXIMO', 'Auto, cada 15 min'],
+  ['PRECIOS VARIACIONES',  'PRECIOS', 'Precios manuales por SKU publicado (IMPORTRANGE de tu otro libro). Ganan sobre el precio normal en EXPORTAR, MINIMO y MAXIMO; sin precio o #N/A se vuelven 0', 'Auto (IMPORTRANGE)'],
 
   ['LOG Ventas',           'SISTEMA', 'Bitácora de todo lo que hacen los procesos automáticos', 'Auto']
 ];
@@ -80,7 +80,7 @@ var ORG_HOJAS = [
 var ORG_GUIA_MENU = [
   ['⚙️ Venta Diaria', '🔄 Importar ventas de Odoo ahora', 'Baja las ventas nuevas de Odoo y revisa precios y alertas. Es lo mismo que hace solo el trigger de 10 min.', 'Cuando quieras datos frescos ya', 'A VECES'],
   ['⚙️ Venta Diaria', '💲 Actualizar PRECIOS ERIK desde Site Sheet', 'Rehace PRECIOS ERIK con los mínimos de Site Sheet.', 'Normalmente solo (cada 15 min)', 'A VECES'],
-  ['⚙️ Venta Diaria', '📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'Rehace EXPORTAR, MINIMO y MAXIMO (lógica de CAMBIO DE PRECIOS) con los precios de Site Sheet, el inventario de WM_Inv y PRECIOS VARIACIONES. Las columnas T y U de EXPORTAR son tus fórmulas y no se tocan.', 'Normalmente solo (cada 15 min)', 'A VECES'],
+  ['⚙️ Venta Diaria', '📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'Rehace EXPORTAR, MINIMO y MAXIMO (lógica de CAMBIO DE PRECIOS) con los precios de Site Sheet, el inventario de WM_Inv y PRECIOS VARIACIONES. Escribe solo SKU y precios (sin columnas de apoyo ni fórmulas).', 'Normalmente solo (cada 15 min)', 'A VECES'],
   ['⚙️ Venta Diaria', '🔄 Traer killers de Site Sheet y actualizar KILLERS ACTIVOS', 'Trae los killers del site, quita los excluidos y los que pierden más de 3%, y rehace KILLERS ACTIVOS.', 'Cuando cambien killers y quieras verlo ya', 'DIARIO'],
   ['⚙️ Venta Diaria', '🎯 Procesar killers pegados (respaldo manual)', 'Procesa lo que pegaste en KILLERS PEGAR.', 'Solo si Site Sheet no trae los killers', 'SOPORTE'],
   ['⚙️ Venta Diaria', '📅 Reporte de killers del mes', 'Arma una hoja KILLERS <MES> con cada SKU, sus rangos y lo vendido en cada uno.', 'Al cierre de mes', 'A VECES'],

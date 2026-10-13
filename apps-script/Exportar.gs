@@ -1,35 +1,28 @@
 /**
  * VENTA DIARIA ODOO 2026 — EXPORTAR / MINIMO / MAXIMO
  *
- * Esta es la lógica que vivía en el libro "CAMBIO DE PRECIOS WALMART 2026"
- * (hojas EXPORTAR, MINIMO y MAXIMO, con sus fórmulas FILTER / XLOOKUP / QUERY),
- * ahora hecha por el script y con LOS MISMOS RESULTADOS:
+ * La conclusión de lo que hacían las hojas EXPORTAR, MINIMO y MAXIMO del libro "CAMBIO DE PRECIOS
+ * WALMART 2026" (13 columnas de FILTER / XLOOKUP / QUERY), hecha por el script y con los MISMOS
+ * resultados, pero escribiendo SOLO lo que se usa:
  *
- *   B  SKU WALMART            inventario publicado (hoja Inventario de WM_Inv)
- *   D  SKU ERIK               SKU general con su precio (Site Sheet, EM y debajo CVA)
- *   E  SIN MSI                precio clásica          F  CON MSI   precio premium
- *   H  SKU REALES WALMART     B que coinciden con D (o con sus variantes -2…-9, -MSI…)
- *   J  SKU SIN MSI            B que son D o D-2…-9     K  base sin -2…-9    L  precio clásica
- *   N  SKU TOTAL CON MSI      B que son D-MSI o D-MSI-2…-9
- *                             O  base sin -MSI…        P  precio premium
- *   R  SKU FINALES WALMART    J+L, N+P y PRECIOS VARIACIONES (las variaciones ganan)
- *   S  PRECIO FINAL           el precio de R
- *   T  PRECIO -2%             solo EXPORTAR: S × 0.98   (fórmula tuya, el script no la toca)
- *   U  PRECIO CARGA           solo EXPORTAR: INT(T/10)×10+9 (fórmula tuya, el script no la toca)
+ *   EXPORTAR   SKU WALMART · PRECIO FINAL · PRECIO -2% · PRECIO CARGA
+ *   MINIMO     SKU WALMART · PRECIO MINIMO
+ *   MAXIMO     SKU WALMART · PRECIO MAXIMO
  *
- * Lo que de verdad importa: R y S (las tres hojas) y U (EXPORTAR).
+ * Cómo se llega al precio de cada SKU del inventario de Walmart (todo en memoria, sin columnas de apoyo):
+ *   1. SKU general con su precio en Site Sheet (EM y debajo CVA): clásica y premium.
+ *   2. Un SKU publicado que es el general (o general-2…-9) toma el precio CLÁSICA.
+ *      Uno que es general-MSI (o general-MSI-2…-9) toma el precio PREMIUM.
+ *   3. PRECIOS VARIACIONES (precios manuales por SKU publicado) se agregan al final y ganan.
+ *      Una variación sin precio o con #N/A se convierte en 0.
+ *   4. EXPORTAR: sin repetidos (si una llave sale dos veces gana la última).
+ *      PRECIO -2% = precio × 0.98 · PRECIO CARGA = INT(-2% / 10) × 10 + 9 (si el precio es 0, la carga es 0).
  *
- * Diferencias entre las tres, igual que en el libro original:
- *   · EXPORTAR usa los precios NORMALES, sin repetidos (si una llave sale dos veces gana la última,
- *     y las variaciones van al final), y una variación sin precio (#N/A) queda como #N/A.
- *   · MINIMO y MAXIMO usan los precios MÍNIMO y MÁXIMO, dejan todas las filas y un #N/A queda en blanco.
- *
- * De dónde sale cada cosa (ya no hay hojas PRECIOS FINAL FINAL / PRECIOS MINIMO / PRECIOS MAXIMO
- * ni INVENTARIO SCROLL: se leen directo):
+ * De dónde sale cada cosa (ya no existen PRECIOS FINAL FINAL / MINIMO / MAXIMO ni INVENTARIO SCROLL):
  *   · Precios:  Site Sheet → Precios EM|CVA Normal|Minimo|Maximo (columnas por encabezado).
  *   · Inventario: dashboard de Walmart (WM_Inv) → Inventario → columna sku.
- *   · Variaciones: hoja PRECIOS VARIACIONES de este libro (IMPORTRANGE de tu otro libro; la crea el
- *     script y solo hay que darle "Permitir acceso" una vez).
+ *   · Variaciones: hoja PRECIOS VARIACIONES de este libro (IMPORTRANGE; la crea el script y hay que
+ *     darle "Permitir acceso" una vez).
  *
  * Se corre solo dentro de revisarPreciosAuto (cada 15 min) y solo escribe si algo cambió.
  * Menú: 📤 Actualizar EXPORTAR, MINIMO y MAXIMO.
@@ -37,6 +30,12 @@
 
 var EX = {
   HOJA: { EXPORTAR: 'EXPORTAR', MINIMO: 'MINIMO', MAXIMO: 'MAXIMO', VARIACIONES: 'PRECIOS VARIACIONES' },
+  // Columnas que escribe el script en cada hoja (por encabezado: se pueden mover de lugar).
+  COLS: {
+    EXPORTAR: ['SKU WALMART', 'PRECIO FINAL', 'PRECIO -2%', 'PRECIO CARGA'],
+    MINIMO:   ['SKU WALMART', 'PRECIO MINIMO'],
+    MAXIMO:   ['SKU WALMART', 'PRECIO MAXIMO']
+  },
   // Hojas de Site Sheet, EM primero y CVA debajo (si un SKU sale en las dos, gana EM).
   SITE: {
     EXPORTAR: ['Precios EM Normal', 'Precios CVA Normal'],
@@ -45,114 +44,82 @@ var EX = {
   },
   // Libro de variaciones (precios manuales por SKU publicado). Es solo el ID de la hoja, no una credencial.
   VARIACIONES: { ID: '1Uy-SIuVb77xFFGTuAmN6CvbpbWbTU4JXEH7OFNzXrbI', HOJA: 'PRINCIPAL -2', RANGO_SKU: 'C112:C', RANGO_PRECIO: 'J112:J' },
+  FACTOR: 0.98,               // PRECIO -2%
   MIN_FILAS_SITE: 100,        // por hoja: menos que esto es una lectura rota y no se escribe nada
   MIN_INVENTARIO: 100,
   REFRESCO_MS: 3600000,       // aunque nada parezca haber cambiado, se vuelve a leer todo una vez por hora
-  PROP: { CLAVE: 'EX_CLAVE', PESADA: 'EX_PESADA', HASH: 'EX_HASH', N: 'EX_N', VARIACIONES: 'EX_VARIACIONES', ULTIMO_ERROR: 'EX_ULTIMO_ERROR' },
-  FACTOR_TEXTO: '0.98'        // solo para el texto del aviso; la cuenta vive en la fórmula de la columna T
+  PROP: { CLAVE: 'EX_CLAVE', PESADA: 'EX_PESADA', HASH: 'EX_HASH', N: 'EX_N', VARIACIONES: 'EX_VARIACIONES', ULTIMO_ERROR: 'EX_ULTIMO_ERROR' }
 };
-
-/** Encabezados de las tres hojas, en SUS columnas de siempre (A y los huecos quedan en blanco a propósito). */
-var EX_CAB = ['', 'SKU WALMART', '', 'SKU ERIK', 'SIN MSI', 'CON MSI', '', 'SKU REALES WALMART', '',
-              'SKU SIN MSI', 'BASE CLASICA', 'PRECIO CLASICA', '', 'SKU TOTAL CON MSI', 'BASE PREMIUM',
-              'PRECIO PREMIUM', '', 'SKU FINALES WALMART', 'PRECIO FINAL', 'PRECIO -2%', 'PRECIO CARGA'];
-
-/** Columnas que escribe el script, en el orden de las filas que arma exFilas_. */
-var EX_ESCRIBE = ['SKU WALMART', 'SKU ERIK', 'SIN MSI', 'CON MSI', 'SKU REALES WALMART', 'SKU SIN MSI',
-                  'BASE CLASICA', 'PRECIO CLASICA', 'SKU TOTAL CON MSI', 'BASE PREMIUM', 'PRECIO PREMIUM',
-                  'SKU FINALES WALMART', 'PRECIO FINAL'];
 
 // ── Lógica pura (sin llamadas a Google: se prueba en Node contra el libro viejo) ──────────────
 
-/** ¿La llave (en minúsculas) está en el mapa? */
-function exTiene_(mapa, k) { return k in mapa; }
-
-/** XLOOKUP exacto: el valor de la primera aparición, o #N/A si la llave no existe. */
-function exBuscar_(mapa, k) { return (k in mapa) ? mapa[k] : '#N/A'; }
-
 /**
- * Arma todas las columnas.
- *   inv      SKUs del inventario (texto; los que sean número no entran a J, N ni H, como en el libro)
+ * Devuelve { R: [SKU final], S: [precio] } para una hoja.
+ *   inv      SKUs del inventario (texto; los que sean número no entran, como en el libro viejo)
  *   precios  [[sku, clasica, premium], …]  EM y debajo CVA, tal cual vienen (puede haber repetidos)
- *   vars     [[llave, precio], …]  precio = número | '' | '#N/A'
- *   esExportar  true = reglas de EXPORTAR (sin repetidos, #N/A se queda); false = MINIMO / MAXIMO
+ *   vars     [[llave, precio], …]  precio = número | '' | '#N/A'  (sin precio → 0)
+ *   esExportar  true = sin repetidos (gana el último); false = MINIMO / MAXIMO, todas las filas
  */
 function exArmar_(inv, precios, vars, esExportar) {
-  var NA = '#N/A';
   var E = Object.create(null), F = Object.create(null);
-  var D = [], Ec = [], Fc = [];
   for (var i = 0; i < precios.length; i++) {
-    var s = precios[i][0];
-    D.push(s); Ec.push(precios[i][1]); Fc.push(precios[i][2]);
-    var k = String(s).toLowerCase();
-    if (!(k in E)) { E[k] = precios[i][1]; F[k] = precios[i][2]; }   // XLOOKUP: gana la primera
+    var k = String(precios[i][0]).toLowerCase();
+    if (!(k in E)) { E[k] = precios[i][1]; F[k] = precios[i][2]; }   // gana la primera aparición (EM antes que CVA)
   }
-
-  var B = [], H = [], J = [], K = [], L = [], N = [], O = [], P = [];
+  var J = [], N = [];   // clásicas y premium por separado: primero todas las clásicas, luego todas las premium (como el libro viejo)
   for (var j = 0; j < inv.length; j++) {
     var b = inv[j];
-    if (b === '' || b === null || b === undefined) continue;
-    B.push(b);
-    if (typeof b === 'number') continue;           // el libro pide NOT(ISNUMBER(B))
+    if (typeof b !== 'string' || b === '') continue;
     var bl = b.toLowerCase(), m;
-
-    // H · SKU REALES: igual a D, D-msi, D-2…9, D-msi-2…9
-    var real = exTiene_(E, bl);
-    if (!real && (m = /^(.*)-msi-[2-9]$/.exec(bl)) && exTiene_(E, m[1])) real = true;
-    if (!real && (m = /^(.*)-msi$/.exec(bl)) && exTiene_(E, m[1])) real = true;
-    if (!real && (m = /^(.*)-[2-9]$/.exec(bl)) && exTiene_(E, m[1])) real = true;
-    if (real) H.push(b);
-
-    // J · igual a D o a D-2…9  →  K quita el -2…9  →  L precio clásica
-    if (exTiene_(E, bl) || ((m = /^(.*)-[2-9]$/.exec(bl)) && exTiene_(E, m[1]))) {
-      var kk = b.replace(/-[2-9]$/, '');
-      J.push(b); K.push(kk); L.push(exBuscar_(E, kk.toLowerCase()));
+    // Clásica: igual al general o a general-2…9 → se quita el -2…9 y se busca el precio clásica
+    if ((bl in E) || ((m = /^(.*)-[2-9]$/.exec(bl)) && (m[1] in E))) {
+      var kc = b.replace(/-[2-9]$/, '').toLowerCase();
+      J.push([b, (kc in E) ? E[kc] : '#N/A']);
     }
-    // N · igual a D-MSI o D-MSI-2…9  →  O quita el -MSI…  →  P precio premium
-    if ((m = /^(.*)-msi(?:-[2-9])?$/.exec(bl)) && exTiene_(E, m[1])) {
-      var oo = b.replace(/-MSI(?:-[2-9])?$/i, '');
-      N.push(b); O.push(oo); P.push(exBuscar_(F, oo.toLowerCase()));
+    // Premium: general-MSI o general-MSI-2…9 → se quita el -MSI… y se busca el precio premium
+    if ((m = /^(.*)-msi(?:-[2-9])?$/.exec(bl)) && (m[1] in E)) {
+      var kp = b.replace(/-MSI(?:-[2-9])?$/i, '').toLowerCase();
+      N.push([b, (kp in F) ? F[kp] : '#N/A']);
     }
   }
-
-  // R · S: J+L, N+P y las variaciones al final
-  var pares = [];
-  for (var a = 0; a < J.length; a++) pares.push([J[a], L[a]]);
-  for (var c = 0; c < N.length; c++) pares.push([N[c], P[c]]);
+  var pares = J.concat(N);
   for (var v = 0; v < vars.length; v++) {
     var llave = vars[v][0];
     if (llave === '' || llave === null || llave === undefined) continue;
-    pares.push([String(llave), vars[v][1]]);
+    var p = vars[v][1];
+    pares.push([String(llave), p]);
   }
   var R = [], S = [];
   if (esExportar) {
     var ultimo = Object.create(null), orden = [];
-    pares.forEach(function (p) {
-      var kl = p[0].toLowerCase();
-      if (!(kl in ultimo)) orden.push(p[0]);
-      ultimo[kl] = p[1];
+    pares.forEach(function (q) {
+      var kl = q[0].toLowerCase();
+      if (!(kl in ultimo)) orden.push(q[0]);
+      ultimo[kl] = q[1];
     });
     orden.forEach(function (k0) { R.push(k0); S.push(ultimo[k0.toLowerCase()]); });
   } else {
-    pares.forEach(function (p) { R.push(p[0]); S.push(p[1] === NA ? '' : p[1]); });
+    pares.forEach(function (q) { R.push(q[0]); S.push(q[1]); });
   }
-  return { B: B, D: D, E: Ec, F: Fc, H: H, J: J, K: K, L: L, N: N, O: O, P: P, R: R, S: S };
+  S = S.map(function (x) { return x === '#N/A' ? 0 : x; });   // cualquier #N/A → 0
+  return { R: R, S: S };
 }
 
-/** Celda lista para escribir: un #N/A se escribe como =NA() para que siga siendo error de verdad. */
-function exCelda_(v) {
-  if (v === '#N/A') return '=NA()';
-  return (v === undefined || v === null) ? '' : v;
+/** [PRECIO -2%, PRECIO CARGA] de un precio final. Vacío → vacío; 0 → 0 (nunca una carga de $9). */
+function exCarga_(precio) {
+  if (typeof precio !== 'number') return ['', ''];
+  if (!(precio > 0)) return [0, 0];
+  var t = precio * EX.FACTOR;
+  return [Math.round(t * 100) / 100, Math.floor(t / 10) * 10 + 9];
 }
 
-/** Filas en el orden de EX_ESCRIBE. */
-function exFilas_(t) {
-  var cols = [t.B, t.D, t.E, t.F, t.H, t.J, t.K, t.L, t.N, t.O, t.P, t.R, t.S];
-  var n = 0;
-  cols.forEach(function (c) { if (c.length > n) n = c.length; });
+/** Filas listas para escribir, en el orden de EX.COLS[tipo]. */
+function exFilas_(tipo, t) {
   var filas = [];
-  for (var i = 0; i < n; i++) {
-    filas.push(cols.map(function (c) { return i < c.length ? exCelda_(c[i]) : ''; }));
+  for (var i = 0; i < t.R.length; i++) {
+    var s = t.S[i], fila = [t.R[i], (s === undefined || s === null) ? '' : s];
+    if (tipo === 'EXPORTAR') fila = fila.concat(exCarga_(s));
+    filas.push(fila);
   }
   return filas;
 }
@@ -169,18 +136,19 @@ function exFilasSite_(datos, iSku, iCla, iPre) {
   return out;
 }
 
-/** Variaciones tal como las deja el IMPORTRANGE: [[llave, precio]] con precio número, '' o '#N/A'. Devuelve null si el IMPORTRANGE no está autorizado. */
+/**
+ * Variaciones tal como las deja el IMPORTRANGE: [[llave, precio]] con precio número o 0 (vacío, #N/A, texto, ≤ 0).
+ * Devuelve null si el IMPORTRANGE no está autorizado (#REF!).
+ */
 function exVariacionesDe_(valores) {
   var out = [];
   for (var i = 0; i < valores.length; i++) {
     var llave = String(valores[i][0] == null ? '' : valores[i][0]).trim();
     if (!llave) continue;
     if (llave.charAt(0) === '#') return null;               // #REF! = falta permitir el acceso
-    var p = valores[i][1], precio;
-    if (typeof p === 'number') precio = p;
-    else if (p === '' || p === null || p === undefined) precio = '';
-    else if (String(p).charAt(0) === '#') precio = '#N/A';
-    else { var n = num_(p); precio = n > 0 ? n : ''; }
+    var p = valores[i][1], precio = 0;
+    if (typeof p === 'number') precio = p > 0 ? p : 0;
+    else if (p !== '' && p !== null && p !== undefined && String(p).charAt(0) !== '#') { var n = num_(p); precio = n > 0 ? n : 0; }
     out.push([llave, precio]);
   }
   return out;
@@ -282,35 +250,31 @@ function exMd5_(texto) {
 
 // ── Escritura ─────────────────────────────────────────────────────────────
 
+/** ¿Están las tres hojas? */
 function exHojasExisten_() {
   var ss = libro_();
   return ['EXPORTAR', 'MINIMO', 'MAXIMO'].every(function (k) { return !!ss.getSheetByName(EX.HOJA[k]); });
 }
 
-/**
- * Pone las fórmulas de T y U de EXPORTAR solo si están vacías (son tuyas: si cambias el 0.98 o el
- * redondeo, el script no las pisa). T = S × 0.98 · U = INT(T/10)×10+9.
- */
-function exFormulasTU_(sh) {
-  var cT = colDe_(sh, 'PRECIO -2%', 1), cU = colDe_(sh, 'PRECIO CARGA', 1), cS = colDe_(sh, 'PRECIO FINAL', 1);
-  if (!cT || !cU || !cS) return;
-  var lS = letraCol_(cS - 1), lT = letraCol_(cT - 1);
-  var t2 = sh.getRange(2, cT), u2 = sh.getRange(2, cU);
-  if (t2.getFormula() === '' && t2.getValue() === '') {
-    t2.setFormula('=ARRAYFORMULA(IF(' + lS + '2:' + lS + '="","",' + lS + '2:' + lS + '*' + EX.FACTOR_TEXTO + '))');
-  }
-  if (u2.getFormula() === '' && u2.getValue() === '') {
-    u2.setFormula('=ARRAYFORMULA(IF(' + lT + '2:' + lT + '="","",INT(' + lT + '2:' + lT + '/10)*10+9))');
+/** Si la hoja es la copia vieja del libro CAMBIO DE PRECIOS (21 columnas con SKU REALES WALMART), no se escribe encima. */
+function exRevisarCopiaVieja_(tipo) {
+  var sh = libro_().getSheetByName(EX.HOJA[tipo]);
+  if (!sh || sh.getLastColumn() < 2) return;
+  var h = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  for (var i = 0; i < h.length; i++) {
+    if (norm_(h[i]) === norm_('SKU REALES WALMART')) {
+      throw new Error('La hoja "' + EX.HOJA[tipo] + '" es la copia vieja de CAMBIO DE PRECIOS (con todas sus columnas de apoyo). ' +
+                      'Bórrala (clic derecho en la pestaña → Eliminar) y vuelve a correr: el script la crea limpia.');
+    }
   }
 }
 
-/** Escribe una de las tres hojas. Devuelve cuántas filas finales (R·S) y cuántas variaciones sin precio. */
+/** Escribe una de las tres hojas. Devuelve cuántas filas. */
 function exEscribirHoja_(tipo, t) {
-  var cab = (tipo === 'EXPORTAR') ? EX_CAB : EX_CAB.slice(0, 19);
-  var sh = hoja_(EX.HOJA[tipo], cab);
-  var filas = exFilas_(t);
-  escribirPorEncabezado_(sh, EX_ESCRIBE, filas, { clave: 'EX_COLS_' + tipo });
-  if (tipo === 'EXPORTAR') exFormulasTU_(sh);
+  var cols = EX.COLS[tipo];
+  var sh = hoja_(EX.HOJA[tipo], cols);
+  var filas = exFilas_(tipo, t);
+  escribirPorEncabezado_(sh, cols, filas, { clave: 'EX_COLS_' + tipo });
   return filas.length;
 }
 
@@ -321,6 +285,7 @@ function exEscribirHoja_(tipo, t) {
  */
 function exportarPrecios_(forzar) {
   var t0 = Date.now();
+  ['EXPORTAR', 'MINIMO', 'MAXIMO'].forEach(exRevisarCopiaVieja_);
   var inv = exLeerInventario_();
   var vars = exLeerVariaciones_();
   var huella = huellaSiteSheet_();
@@ -354,21 +319,21 @@ function exportarPrecios_(forzar) {
     throw new Error('EXPORTAR saldría con ' + finales + ' SKUs contra ' + antes + ' la última vez. No se escribió nada.');
   }
 
-  var res = { cambio: true, finales: {}, sinPrecio: {}, nA: 0 };
+  var res = { cambio: true, finales: {}, sinPrecio: {}, ceros: {} };
   ['EXPORTAR', 'MINIMO', 'MAXIMO'].forEach(function (tipo) {
     exEscribirHoja_(tipo, tablas[tipo]);
     var S = tablas[tipo].S;
     res.finales[tipo] = tablas[tipo].R.length;
-    res.sinPrecio[tipo] = S.filter(function (x) { return x === '' || x === null; }).length;
+    res.sinPrecio[tipo] = S.filter(function (x) { return x === '' || x === null || x === undefined; }).length;
+    res.ceros[tipo] = S.filter(function (x) { return x === 0; }).length;
   });
-  res.nA = tablas.EXPORTAR.S.filter(function (x) { return x === '#N/A'; }).length;
   SpreadsheetApp.flush();
 
   setProp_(EX.PROP.HASH, hash);
   setProp_(EX.PROP.N, String(finales));
   res.segundos = Math.round((Date.now() - t0) / 100) / 10;
   logOK_('EXPORTAR', 'EXPORTAR ' + res.finales.EXPORTAR + ' · MINIMO ' + res.finales.MINIMO + ' · MAXIMO ' + res.finales.MAXIMO +
-         ' SKUs · ' + res.segundos + ' s', { sinPrecio: res.sinPrecio, variacionesSinPrecio: res.nA, inventario: inv.length, variaciones: vars.length });
+         ' SKUs · ' + res.segundos + ' s', { sinPrecio: res.sinPrecio, enCero: res.ceros, inventario: inv.length, variaciones: vars.length });
   return res;
 }
 
@@ -393,11 +358,10 @@ function exportarPreciosWalmart() {
   if (!lock) { avisar_('La importación automática está corriendo en este momento y no terminó en 3 minutos.\n\nNo pasa nada: espera a que termine (revisa LOG Ventas) y vuelve a darle.'); return; }
   try {
     var r = exportarPrecios_(true);
-    avisar_('EXPORTAR, MINIMO y MAXIMO actualizadas\n\n' +
-            'SKUs con precio final (R·S):\n  EXPORTAR ' + r.finales.EXPORTAR + '\n  MINIMO ' + r.finales.MINIMO + '\n  MAXIMO ' + r.finales.MAXIMO +
-            '\n\nVariaciones sin precio (#N/A en EXPORTAR): ' + r.nA +
-            '\nSin precio: EXPORTAR ' + r.sinPrecio.EXPORTAR + ' · MINIMO ' + r.sinPrecio.MINIMO + ' · MAXIMO ' + r.sinPrecio.MAXIMO +
-            '\n\nLas columnas T y U de EXPORTAR son tus fórmulas (S × ' + EX.FACTOR_TEXTO + ' y redondeo a 9): el script no las toca.');
+    avisar_('EXPORTAR, MINIMO y MAXIMO actualizadas (' + r.segundos + ' s)\n\n' +
+            'SKUs:\n  EXPORTAR ' + r.finales.EXPORTAR + '\n  MINIMO ' + r.finales.MINIMO + '\n  MAXIMO ' + r.finales.MAXIMO +
+            '\n\nEn 0 (variación sin precio): EXPORTAR ' + r.ceros.EXPORTAR + ' · MINIMO ' + r.ceros.MINIMO + ' · MAXIMO ' + r.ceros.MAXIMO +
+            '\nSin precio: EXPORTAR ' + r.sinPrecio.EXPORTAR + ' · MINIMO ' + r.sinPrecio.MINIMO + ' · MAXIMO ' + r.sinPrecio.MAXIMO);
   } catch (e) {
     logError_('EXPORTAR', e);
     avisar_('No se pudo actualizar EXPORTAR, MINIMO y MAXIMO:\n\n' + e);
