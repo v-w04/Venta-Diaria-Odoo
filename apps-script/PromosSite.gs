@@ -282,5 +282,9 @@ function psAvisarUnaVez_(clave, fn) {
 function promoSiteDeSku_(promos, sku) {
   if (!promos || !promos.skus) return null;
   var s = sku_(sku);
-  return promos.skus[s] || promos.skus[skuSinVariante_(s)] || promos.skus[skuBase_(s)] || null;
+  var info = promos.skus[s] || promos.skus[skuSinVariante_(s)] || promos.skus[skuBase_(s)] || null;
+  // Videojuegos: el site captura sus promociones como CLÁSICA (sin -MSI), pero la promoción solo vale
+  // para la publicación premium (-MSI, -MSI-2…). La clásica de Videojuegos no tiene promoción.
+  if (info && /VIDEOJUEGO/.test(norm_(info.cat)) && tipoPublicacion_(s) !== 'PREMIUM') return null;
+  return info;
 }

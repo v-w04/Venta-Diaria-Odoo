@@ -45,6 +45,7 @@ var ORG_HOJAS = [
 
   ['KILLERS ACTIVOS',      'KILLERS', 'Lo que se carga a Walmart: killers vigentes + promociones de categoría (Carga = mínimo − puntos)', 'Auto, con los killers del site'],
   ['KILLERS BAJO MINIMO',  'KILLERS', 'Copia de Site Sheet: killers que no cubren tu mínimo, con categoría y % de pérdida. Más de 3% = no entra a ACTIVOS', 'Auto, cada ~4 min'],
+  ['PRECIO LIBRE',         'KILLERS', 'Productos que vendes siempre más baratos a propósito: no alertan bajo mínimo (por SKU base)', 'Manual (tú la editas)'],
   ['KILLERS EXCLUIDOS',    'KILLERS', 'SKUs exactos que NO deben entrar a KILLERS ACTIVOS (Walmart pidió precio base)', 'Manual (tú la editas)'],
   ['COMPARAR WALMART',     'KILLERS', 'KILLERS ACTIVOS contra el precio real de Walmart: decisión y % vs mínimo', 'Auto, cada 15 min'],
   ['CARGA KILLERS',        'KILLERS', 'CSV para el site: SKU, CATEGORIA y REDUCCION (PUNTOS) de los killers de videojuegos (4.5) y fotografía (7)', 'Menú: Armar CARGA KILLERS'],

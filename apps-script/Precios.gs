@@ -322,6 +322,11 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   var dif = J - min;
   var pct = dif / min;
 
+  // 0) Producto de PRECIO LIBRE (hoja manual): siempre se vende más barato a propósito, no alerta.
+  if (J < min - CFG.TOLERANCIA_PRECIO && precioLibre_(s)) {
+    return [min, base, tipo, origen, 'MINIMO', dif, pct, 'OK', nota('Precio libre (hoja ' + PL_HOJA + ')')];
+  }
+
   if (J >= min - CFG.TOLERANCIA_PRECIO) {
     return [min, base, tipo, origen, 'MINIMO', dif, pct, 'OK', notaAsig];
   }
@@ -375,6 +380,51 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
   }
 
   return [min, base, tipo, origen, 'MINIMO', dif, pct, 'BAJO MINIMO', notaAsig];
+}
+
+/**
+ * PRECIO LIBRE: productos que Luis vende siempre más baratos a propósito. No alertan por estar
+ * bajo el mínimo (ni aquí ni en COMPARAR WALMART). Se busca por SKU BASE: cubre sus variantes
+ * (-MSI, -2…-9) y el SKU sin -MSI. HASTA (opcional): con fecha, vuelve a alertar al día siguiente.
+ * La primera vez precarga los dos que pidió Luis el 14/10/2026.
+ */
+var PL_HOJA = 'PRECIO LIBRE';
+var ENC_PL = ['SKU', 'MOTIVO', 'HASTA (opcional)'];
+function precioLibre_(sku) {
+  if (precioLibre_.m === undefined) {
+    var m = {};
+    try {
+      var sh = hoja_(PL_HOJA, ENC_PL);
+      if (prop_('PRECIO_LIBRE_V1') !== '1') {
+        var ya = {};
+        if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) { ya[skuBase_(r[0])] = true; });   // col-fija: la hoja la creo yo arriba
+        [['HP-35D67AA-NEG-9383-MSI-2', 'Se vende siempre más barato a propósito'],
+         ['AMA-53034095-NEG-4699-MSI', 'Se vende siempre más barato a propósito']].forEach(function (x) {
+          if (!ya[skuBase_(x[0])]) sh.appendRow([x[0], x[1], '']);
+        });
+        sh.setFrozenRows(1);
+        setProp_('PRECIO_LIBRE_V1', '1');
+      }
+      if (sh.getLastRow() > 1) {
+        var d = sh.getRange(1, 1, sh.getLastRow(), Math.max(sh.getLastColumn(), 1)).getValues();
+        var mc = mapaColumnas_(d[0]), cS = mc[norm_('SKU')], cH = mc[norm_('HASTA (opcional)')];
+        if (cH === undefined) cH = mc[norm_('HASTA')];
+        if (cS !== undefined) {
+          var ahora = Date.now();
+          d.slice(1).forEach(function (r) {
+            var k = skuBase_(r[cS]);
+            if (!k) return;
+            var hv = cH === undefined ? '' : r[cH];
+            var h = hv instanceof Date ? hv : (String(hv || '').trim() ? fechaK_(hv) : '');
+            if (h instanceof Date && h.getTime() + 24 * 3600 * 1000 < ahora) return;
+            m[k] = true;
+          });
+        }
+      }
+    } catch (e) { m = {}; }
+    precioLibre_.m = m;
+  }
+  return precioLibre_.m[skuBase_(sku)] === true;
 }
 
 /**

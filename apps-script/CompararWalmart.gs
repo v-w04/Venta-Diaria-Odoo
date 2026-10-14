@@ -75,6 +75,24 @@ function compararWalmartAuto_() {
 }
 
 /**
+ * Videojuegos: el killer se compara contra la publicación PREMIUM real de Walmart (nunca la clásica).
+ *  · El SKU del killer manda (tal cual, con su -MSI / -MSI-2…). Si existe en Walmart, se usa ese.
+ *  · Si el killer vino sin -MSI y Walmart tiene UNA sola premium de ese SKU base, se usa esa.
+ *  · Si no coincide (p. ej. el killer dice -MSI-3 y Walmart publica -MSI-2) NO se cambia el SKU:
+ *    solo se avisa cuáles premium tiene Walmart. Nunca se inventa el sufijo.
+ */
+function cwPremiumVj_(sku, wm) {
+  var premium = tipoPublicacion_(sku) === 'PREMIUM';
+  if (premium && wm[sku] && wm[sku].precio > 0) return { sku: sku, aviso: '' };
+  var base = skuBase_(sku), cands = Object.keys(wm).filter(function (k) {
+    return k !== sku && tipoPublicacion_(k) === 'PREMIUM' && wm[k].precio > 0 && skuBase_(k) === base;
+  });
+  if (!premium && cands.length === 1) return { sku: cands[0], aviso: 'Videojuegos: el killer venía sin MSI, se tomó ' + cands[0] };
+  if (cands.length) return { sku: sku, aviso: 'Videojuegos: el killer dice ' + sku + ' y Walmart tiene ' + cands.join(', ') };
+  return { sku: sku, aviso: '' };
+}
+
+/**
  * Puntos de promoción (fracción, 0.07) que aplican a un SKU para el análisis:
  *   1) si el SKU está en la lista de promociones del site (APLICA = SI), los del site;
  *   2) si no, y su categoría es "PROMO SOLO EN KILLERS" (Videojuegos), la de COMISIONES
@@ -136,7 +154,9 @@ function compararWalmart_() {
     var red = (!promo && min > 0) ? cwPuntosPromo_(sku, kamCat, promos, pc) : 0;
     if (red > 0) min = min * (1 - red);
     var cupon = xE === undefined ? 0 : num_(f[xE]);
-    var w = wm[sku], dec, pct = '', entra = '', dif = '', aviso = '', wp = '';
+    var avisoVj = '', skuWm = sku;
+    if (/VIDEOJUEGO/.test(norm_(kamCat))) { var rv = cwPremiumVj_(sku, wm); skuWm = rv.sku; avisoVj = rv.aviso; }
+    var w = wm[skuWm], dec, pct = '', entra = '', dif = '', aviso = '', wp = '';
     if (!w || !(w.precio > 0)) {
       dec = 'NO PUBLICADO EN WALMART'; cont.NOPUB++;
       aviso = w ? 'Walmart tiene el precio en 0' : 'No está en el dashboard';
@@ -150,12 +170,14 @@ function compararWalmart_() {
         pct = (entra - min) / min;                       // fracción: -0.043 = 4.3% abajo
         var baja = -pct * 100;
         if (baja <= 0.05) { dec = 'OK'; cont.OK++; }
+        else if (precioLibre_(sku)) { dec = 'OK (PRECIO LIBRE)'; cont.OK++; }
         else if (baja <= bd.b1) { dec = 'DEJAR'; cont.DEJAR++; }
         else if (baja <= bd.b2) { dec = 'REVISAR KAM'; cont.REVISAR++; }
         else { dec = 'CAMBIO / QUITAR'; cont.CAMBIO++; }
       }
       if (Math.abs(dif) >= 1) aviso = wp > carga ? 'Walmart más alto que tu Carga' : 'Walmart más bajo que tu Carga';
     }
+    if (avisoVj) aviso = avisoVj + (aviso ? ' · ' + aviso : '');
     out.push([sku, promo ? 'PROMO' : red > 0 ? 'KILLER + PROMO' : 'KILLER', kamCat, dec, pct, entra, min || '',
               wp, carga || '', dif, aviso, w ? w.estado : '', w ? w.stock : '',
               xN === undefined ? '' : f[xN]]);
@@ -190,7 +212,7 @@ function compararWalmart_() {
     var col = out.map(function (x) {
       var k = x[3];
       return [k === 'CAMBIO / QUITAR' ? '#e06666' : k === 'REVISAR KAM' ? '#f9cb9c' : k === 'DEJAR' ? '#fff2cc' :
-              k === 'OK' ? '#d9ead3' : '#d9d9d9'];
+              (k === 'OK' || k === 'OK (PRECIO LIBRE)') ? '#d9ead3' : '#d9d9d9'];
     });
     h.getRange(2, cDec, out.length, 1).setBackgrounds(col);
   }
