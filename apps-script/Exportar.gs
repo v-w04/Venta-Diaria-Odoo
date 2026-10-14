@@ -193,6 +193,63 @@ function exLeerFuente_(tipo) {
   return todo;
 }
 
+
+// ── SKUs asignados (hoja SKU ASIGNADOS): el asignado toma los precios del principal ───────────
+
+/** SKU de una publicación → su SKU general (quita -MSI, -MSI-2…9 o -2…9 del final). */
+function exGeneral_(sku) {
+  return String(sku).replace(/-MSI(?:-[2-9])?$/i, '').replace(/-[2-9]$/, '');
+}
+
+/** Grupos de SKU ASIGNADOS sin repetir: [{principal, grupo:[…]}]. Si la hoja no se puede leer → []. */
+function exGrupos_() {
+  var mapa = {};
+  try { mapa = leerAsignados_(); } catch (e) { return []; }
+  var vistos = {}, out = [];
+  Object.keys(mapa).forEach(function (k) {
+    var g = mapa[k], clave = g.grupo.join('|');
+    if (!vistos[clave]) { vistos[clave] = true; out.push(g); }
+  });
+  return out;
+}
+
+/** [[generalAsignado, generalPrincipal], …] (solo los distintos entre sí, sin repetir). */
+function exParesAsignados_(grupos) {
+  var out = [], vistos = {};
+  grupos.forEach(function (g) {
+    var gp = exGeneral_(g.principal);
+    g.grupo.forEach(function (x) {
+      var ga = exGeneral_(x), k = ga.toLowerCase();
+      if (k === gp.toLowerCase() || vistos[k]) return;
+      vistos[k] = true;
+      out.push([ga, gp]);
+    });
+  });
+  return out;
+}
+
+/**
+ * El SKU asignado toma los precios (clásica y premium) del principal: sus filas se reemplazan por las del
+ * principal; si no tenía fila, se agrega. Pura: devuelve filas nuevas, no toca las de entrada.
+ * filas: [[…, sku, …, clásica, premium]] con los índices iSku / iCla / iPre.
+ */
+function exAplicarAsignados_(filas, iSku, iCla, iPre, pares) {
+  var out = filas.map(function (f) { return f.slice(); });
+  if (!pares.length) return out;
+  var idx = Object.create(null);
+  out.forEach(function (f, i) { var k = String(f[iSku]).toLowerCase(); if (!(k in idx)) idx[k] = i; });
+  pares.forEach(function (par) {
+    var ip = idx[par[1].toLowerCase()];
+    if (ip === undefined) return;                                  // el principal no tiene precios: no se toca nada
+    var P = out[ip], hay = false;
+    out.forEach(function (f) {
+      if (String(f[iSku]).toLowerCase() === par[0].toLowerCase()) { f[iCla] = P[iCla]; f[iPre] = P[iPre]; hay = true; }
+    });
+    if (!hay) { var n = P.slice(); n[iSku] = par[0]; out.push(n); }
+  });
+  return out;
+}
+
 /** SKUs del inventario publicado (columna sku del dashboard de Walmart). */
 function exLeerInventario_() {
   var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName(CFG.WM_DASH.HOJA);
@@ -294,19 +351,24 @@ function exportarPrecios_(forzar) {
   ['EXPORTAR', 'MINIMO', 'MAXIMO'].forEach(exRevisarCopiaVieja_);
   var inv = exLeerInventario_();
   var vars = exLeerVariaciones_();
+  // SKUs asignados: toman los precios del principal; sus variaciones propias ya no cuentan.
+  var pares = exParesAsignados_(exGrupos_());
+  var asignGen = Object.create(null);
+  pares.forEach(function (p) { asignGen[p[0].toLowerCase()] = true; });
+  vars = vars.filter(function (v) { return !asignGen[exGeneral_(v[0]).toLowerCase()]; });
   var huella = huellaSiteSheet_();
   var existen = exHojasExisten_();
 
   // Revisión barata: si ni el inventario, ni las variaciones, ni el aviso de precios de Site Sheet cambiaron
   // (y hace menos de una hora de la última lectura completa), no se vuelven a leer las seis hojas de precios.
-  var clave = exMd5_(JSON.stringify([inv, vars])) + '|' + huella;
+  var clave = exMd5_(JSON.stringify([inv, vars, pares])) + '|' + huella;
   var pesada = Number(prop_(EX.PROP.PESADA, '0'));
   if (!forzar && existen && clave === prop_(EX.PROP.CLAVE) && (Date.now() - pesada) < EX.REFRESCO_MS) {
     return { cambio: false, razon: 'sin cambios' };
   }
 
   var fuentes = {};
-  ['EXPORTAR', 'MINIMO', 'MAXIMO'].forEach(function (tipo) { fuentes[tipo] = exLeerFuente_(tipo); });
+  ['EXPORTAR', 'MINIMO', 'MAXIMO'].forEach(function (tipo) { fuentes[tipo] = exAplicarAsignados_(exLeerFuente_(tipo), 0, 1, 2, pares); });
   var hash = exMd5_(JSON.stringify([inv, vars, fuentes]));
   setProp_(EX.PROP.CLAVE, clave);
   setProp_(EX.PROP.PESADA, String(Date.now()));

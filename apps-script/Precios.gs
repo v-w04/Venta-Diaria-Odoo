@@ -123,6 +123,8 @@ function leerMinimosSite_() {
  */
 function actualizarPreciosErik_(forzar) {
   var filas = leerMinimosSite_();
+  // SKU ASIGNADOS: el asignado toma el mínimo del principal (ej. la 1222 usa el de la 7817).
+  filas = exAplicarAsignados_(filas, 1, 2, 3, exParesAsignados_(exGrupos_()));
 
   var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
                                        JSON.stringify(filas));
