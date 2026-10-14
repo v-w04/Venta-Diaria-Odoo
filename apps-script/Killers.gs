@@ -42,6 +42,10 @@ var ENC_K_EXC = ['SKU', 'CATEGORIA EN WALMART', 'CATEGORIA EN LA PROMO (SITE)', 
 var K_EXCL  = 'KILLERS EXCLUIDOS';       // SKUs exactos que NO deben entrar a KILLERS ACTIVOS (los escribe Luis)
 var ENC_K_EXCL = ['SKU', 'MOTIVO', 'HASTA (opcional)'];
 var K_BAJO  = 'KILLERS BAJO MINIMO';     // killers cuyo "nos pagan" no cubre el mínimo (se descartan de ACTIVOS)
+// Regla de Luis (14/10/2026): el site YA cambia el precio de los productos con promoción, así que
+// KILLERS ACTIVOS NO lleva filas de promoción de categoría (clásicas ni MSI): cargarlas duplicaría el
+// descuento de comisión. ACTIVOS solo lleva killers. Para volver a generarlas: true.
+var K_FILAS_PROMO = false;
 var K_PROMO = 'PROMOCIONES';   // hoja vieja: se quita una vez
 
 var MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
@@ -1200,6 +1204,7 @@ function reconstruirActivos_() {
     logWarn_('KILLERS', 'No se pudo leer el dashboard de Walmart (promoción de categoría)', { error: String(e && e.message || e) });
   }
 
+  if (!K_FILAS_PROMO) extraCat = [];
   extraCat.sort(function (a, b) { return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0; }).forEach(filaPromoCat);
   porIniciar.forEach(filaKiller);
 
