@@ -42,6 +42,8 @@ var ENC_K_EXC = ['SKU', 'CATEGORIA EN WALMART', 'CATEGORIA EN LA PROMO (SITE)', 
 var K_EXCL  = 'KILLERS EXCLUIDOS';       // SKUs exactos que NO deben entrar a KILLERS ACTIVOS (los escribe Luis)
 var ENC_K_EXCL = ['SKU', 'MOTIVO', 'HASTA (opcional)'];
 var K_BAJO  = 'KILLERS BAJO MINIMO';     // killers cuyo "nos pagan" no cubre el mínimo (se descartan de ACTIVOS)
+var K_FUERA = 'KILLERS FUERA';           // killers que salen de ACTIVOS por pérdida (cálculo propio) o por estar bloqueados en Walmart
+var ENC_K_FUERA = ['SKU', 'KAM', 'PRODUCTO', 'MINIMO', 'MINIMO APLICABLE', 'PRECIO KILLER', 'CUPON', 'PAGAN', '% PERDIDA', 'MOTIVO'];
 // Regla de Luis (14/10/2026): el site YA cambia el precio de los productos con promoción, así que
 // KILLERS ACTIVOS NO lleva filas de promoción de categoría (clásicas ni MSI): cargarlas duplicaría el
 // descuento de comisión. ACTIVOS solo lleva killers. Para volver a generarlas: true.
@@ -1059,13 +1061,44 @@ function reconstruirActivos_() {
     var mn = X('PRECIO', r) + (red > 0 ? '*' + (1 - red) : '');
     return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + '),' + X('PRECIO', r) + '>0),MAX(0,(' + mn + '-' + X('PAGAN', r) + ')/(' + mn + ')),"")';
   };
+  // Regla de Luis (14/10/2026): ACTIVOS calcula primero los killers bajo el mínimo y los saca.
+  //   · Cálculo propio: PAGAN (precio negociado + cupón) contra el mínimo de Erik, menos los puntos de
+  //     la promoción si el SKU la trae (la del site). Si pierde más del tope (3%), no entra.
+  //   · SKUs en la hoja Bloqueados del dashboard de Walmart tampoco entran (no se pueden vender).
+  //   · PRECIO LIBRE (siempre más baratos a propósito) NO se saca por pérdida.
+  //   Los que salen se listan en KILLERS FUERA (de ahí salen los correos a los KAMs).
+  var bloqueadosWm = {}, nBloq = 0, fuera = [];
+  try { bloqueadosWm = bloqueadosDelDashboard_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer Bloqueados del dashboard', { error: String(e && e.message || e) }); }
+  var topePropio = (bm ? bm.tope : bmTope_()) / 100;
+  var perdidaPropia_ = function (sku) {
+    var sel = rangoQueAplica_(porSku[sku], ahora);
+    if (!sel) return null;
+    var k = sel.k, min = minimoDe_(tabla, k.sku);
+    if (!(min > 0)) return null;                                    // sin mínimo en Erik: no se puede calcular
+    var cat = k.categoria || cats[k.sku] || cats[k.general] || depto[k.sku] || '';
+    var red = 0;
+    try { red = cwPuntosPromo_(k.sku, cat, promosPL, pcPL) || 0; } catch (e4) { red = 0; }
+    var mn = min * (1 - red);
+    var negoc = k.desc ? Math.floor((min - min * k.desc) / 10) * 10 + 9 : num_(k.negoc);
+    if (!(negoc > 0)) return null;
+    var cupon = num_(k.cupon), pagan = negoc + cupon;
+    return { sku: k.sku, cat: cat, producto: k.detalles || '', min: min, mn: mn, negoc: negoc, cupon: cupon,
+             pagan: pagan, perdida: Math.max(0, (mn - pagan) / mn) };
+  };
   var sinBajo = function (sku) {
     var e = bm && bm.skus[sku];
     if (e && e.perdida > bm.tope + 0.0001) { nBajo++; return false; }
+    if (bloqueadosWm[sku]) { nBloq++; fuera.push({ sku: sku, motivo: 'BLOQUEADO EN WALMART' }); return false; }
+    if (!precioLibre_(sku)) {
+      var p = perdidaPropia_(sku);
+      if (p && p.perdida > topePropio + 0.0001) { p.motivo = 'BAJO MINIMO (cálculo propio)'; fuera.push(p); nBajo++; return false; }
+    }
     return true;
   };
   vigentes = vigentes.filter(sinBajo);
   porIniciar = porIniciar.filter(sinBajo);
+  try { escribirKillersFuera_(fuera); } catch (e5) { logWarn_('KILLERS', 'No se pudo escribir KILLERS FUERA', { error: String(e5 && e5.message || e5) }); }
+  res.bloqueados = nBloq;
   res.bajoMinimo = nBajo;
   res.excluidos = nExcl;
 
@@ -1219,6 +1252,35 @@ function reconstruirActivos_() {
   res.salieron = Object.keys(previos).filter(function (k) { return k && !ahoraSkus[k]; }).length;
   setProp_('KILLERS_ACTIVOS_N', String(filas.length));
   return res;
+}
+
+/** SKUs de la hoja Bloqueados del dashboard de Walmart (WM_Inv): { SKU: true }. */
+function bloqueadosDelDashboard_() {
+  var out = {};
+  var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName('Bloqueados');
+  if (!sh || sh.getLastRow() < 2) return out;
+  var d = sh.getRange(1, 1, sh.getLastRow(), Math.max(sh.getLastColumn(), 1)).getValues();
+  var m = mapaColumnas_(d[0]), iS = m[norm_('sku')], iE = m[norm_('estado')];
+  if (iS === undefined) return out;
+  for (var i = 1; i < d.length; i++) {
+    var s = sku_(d[i][iS]);
+    if (!s) continue;
+    if (iE === undefined || norm_(d[i][iE]) === 'BLOQUEADO') out[s] = true;
+  }
+  return out;
+}
+
+/** KILLERS FUERA: lista de lo que se sacó de ACTIVOS en este armado (se reescribe completa cada vez). */
+function escribirKillersFuera_(lista) {
+  var sh = hoja_(K_FUERA, ENC_K_FUERA);
+  var filas = lista.slice().sort(function (a, b) { return (b.perdida || 0) - (a.perdida || 0); }).map(function (p) {
+    return [p.sku, p.cat || '', p.producto || '', p.min === undefined ? '' : p.min, p.mn === undefined ? '' : Math.round(p.mn),
+            p.negoc === undefined ? '' : p.negoc, p.cupon === undefined ? '' : p.cupon, p.pagan === undefined ? '' : p.pagan,
+            p.perdida === undefined ? '' : p.perdida, p.motivo || ''];
+  });
+  var map = escribirPorEncabezado_(sh, ENC_K_FUERA, filas, { clave: 'ENC_ESCRITOS_K_FUERA' });
+  if (filas.length) formatoColumna_(sh, map, '% PERDIDA', filas.length, '0.0%');
+  if (sh.getFrozenRows() < 1) sh.setFrozenRows(1);
 }
 
 /**
