@@ -29,6 +29,7 @@ function hojasProtegidas_() {
   hojas.push(K_EXCL, K_BAJO);      // killers excluidos (manual) y killers bajo mínimo
   hojas.push(ORG_INDICE, ORG_GUIA);  // índice y guía del menú (Organizar.gs)
   hojas.push(CP_HOJA, CP_TIPOS);   // carga de promociones para el site
+  hojas.push(PK.HOJA);             // CARGA KILLERS (PromosKillers.gs)
   hojas.push(EX.HOJA.EXPORTAR, EX.HOJA.MINIMO, EX.HOJA.MAXIMO, EX.HOJA.VARIACIONES);   // precios para subir a Walmart (Exportar.gs)
   return hojas;
 }

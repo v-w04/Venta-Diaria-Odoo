@@ -21,6 +21,7 @@ function onOpen() {
       .addItem('📦 Revisar sobreventa (Walmart)', 'revisarSobreventa')
       .addItem('✅ Comparar KILLERS ACTIVOS contra Walmart', 'compararConWalmart')
       .addItem('🏷️ Armar carga de promociones para el site', 'armarCargaPromos')
+      .addItem('🎮 Armar CARGA KILLERS (foto y videojuegos)', 'armarCargaKillers')
       .addItem('🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'buscarVentas')
       .addSeparator()
       .addItem('📊 Resumen de Walmart', 'resumenWalmart')
