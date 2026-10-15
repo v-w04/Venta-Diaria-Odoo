@@ -1,0 +1,79 @@
+Alertas.gs|claves[String(r[1]) + '|' + sku_(r[4]) + '|' + num_(r[6])] = true;
+Alertas.gs|var k = String(f[1]) + '|' + sku_(f[6]) + '|' + num_(f[9]);
+Alertas.gs|var min = num_(f[W.REF]), J = num_(f[9]);
+Alertas.gs|nuevas.push([ahora, f[1], f[3], f[4], f[6], f[8], J, min, min - J]);
+Alertas.gs|if (cPrecio >= 0 && r[6] === '') r[6] = r[cPrecio];
+Alertas.gs|if (cRef >= 0 && r[7] === '') r[7] = r[cRef];
+Alertas.gs|if (r[8] === '' && num_(r[7]) && num_(r[6])) r[8] = num_(r[7]) - num_(r[6]);
+Alertas.gs|importe += num_(f[10]);
+Alertas.gs|if (!num_(f[12])) sinRef++;
+BuscarVentas.gs|sh.getRange(2, 12, filas.length, 2).setNumberFormat('$#,##0.00');
+BuscarVentas.gs|var c = (f[1] === 'NO') ? '#f4cccc' : null;
+CargaPromos.gs|h.getRange(2, cEst, filas.length, 1).setBackgrounds(filas.map(function (f) { return [f[3] === 'LISTO' ? '#d9ead3' : '#fff2cc']; }));
+CorreoCVA.gs|filas.forEach(function (f) { total += num_(f[10]); piezas += num_(f[8]); });
+CorreoCVA.gs|var fd = (f[2] instanceof Date) ? f[2] : new Date(f[2]);
+CorreoCVA.gs|var fecha = isNaN(fd.getTime()) ? String(f[2]).slice(0, 10)
+CorreoCVA.gs|'<td style="' + td + '">' + f[3] + '</td>' +
+CorreoCVA.gs|'<td style="' + td + 'font-family:monospace">' + f[6] + '</td>' +
+CorreoCVA.gs|'<td style="' + td + '">' + String(f[7]).replace(/^\[[^\]]*\]\s*/, '').slice(0, 55) + '</td>' +
+CorreoCVA.gs|'<td style="' + td + 'text-align:right">' + num_(f[8]) + '</td>' +
+CorreoCVA.gs|'<td style="' + td + 'text-align:right">$' + dinero_(num_(f[10])) + '</td>' +
+Exportar.gs|if (!(k in E)) { E[k] = precios[i][1]; F[k] = precios[i][2]; } // gana la primera aparición (EM antes que CVA)
+Exportar.gs|var p = vars[v][1];
+Exportar.gs|var p = valores[i][1], precio = 0;
+Importar.gs|var m2o = function (v) { return (v && v.length > 1) ? String(v[1]) : ''; };
+Importar.gs|var wm = filas.filter(function (f) { return esWalmart_(f[3]); });
+Importar.gs|var cva = filas.filter(function (f) { return esCVA_(f[6]); });
+Importar.gs|if (esWalmart_(f[3])) wm.push(f);
+Importar.gs|if (esCVA_(f[6])) cva.push(f);
+Instalar.gs|var k = campos[i][0], etiqueta = campos[i][1], sugerido = campos[i][2];
+Killers.gs|String(r[2]).split(',').forEach(function (x) { if (norm_(x)) fijas[norm_(x)] = true; });
+Killers.gs|if (norm_(r[0]) && !fijas[norm_(r[0])] && pct_(r[1]) !== '') extra.push([r[0], pct_(r[1]), '', '']);
+Killers.gs|sh.getRange(2, 2, todas.length, 1).setNumberFormat('0.00%');
+Killers.gs|sh.getRange(2, 4, todas.length, 1).setNumberFormat('0.0');
+Killers.gs|sh.getRange(1, 4, 1, 3).setValues([[ENC_K_COM[3], ENC_K_COM[4], ENC_K_COM[5]]]);
+Killers.gs|if (dd[q][4] === '' || dd[q][4] === null) sh.getRange(q + 2, 5).setValue('DJI, NIK, CAN, FUJ');
+Killers.gs|sh.getRange(1, 7).setValue(ENC_K_COM[6]);
+Killers.gs|if (norm_(d9[q9][0]) === 'VIDEOJUEGOS' && (d9[q9][6] === '' || d9[q9][6] === null)) sh.getRange(q9 + 2, 7).setValue('SI');
+Killers.gs|var otros = String(d10[q10][2] || '');
+Killers.gs|sh.getRange(q10 + 2, 3).setValue(otros ? otros + ', Accesorios de Fotografia' : 'Accesorios de Fotografia');
+Killers.gs|var c = pct_(r[1]);
+Killers.gs|String(r[2] || '').split(',').forEach(function (x) {
+Killers.gs|var red = descKam_(r[3]);
+Killers.gs|enSite: norm_(r[5]) !== 'NO',
+Killers.gs|soloKillers: norm_(r[6]) === 'SI' };
+Killers.gs|String(r[2] || '').split(',').forEach(function (x) {
+Killers.gs|String(r[4] || '').split(',').forEach(function (x) {
+Killers.gs|var alias = String(r[2]).split(',').map(norm_);
+Killers.gs|var descDe = function (r) { return descKam_(r[8]); };
+Killers.gs|.filter(function (r) { return sku_(r[0]) && (num_(r[1]) > 0 || descDe(r) > 0); })
+Killers.gs|var desc = num_(r[1]) > 0 ? '' : descDe(r);
+Killers.gs|var negoc = num_(r[1]);
+Killers.gs|var cupon = num_(r[2]);
+Killers.gs|var comCup = pct_(r[5]), comMsi = '';
+Killers.gs|var nCat = com[norm_(r[6])], red = rCat[norm_(r[6])];
+Killers.gs|sku: sku_(r[0]), general: skuBase_(r[0]), detalles: String(r[7] || 'Autorizado por KAM'),
+Killers.gs|ini: fechaK_(r[3]), fin: fechaK_(r[4]), comCup: comCup, comMsi: comMsi, wfs: '',
+Killers.gs|origen: 'KAM', categoria: String(r[6] || ''), carga: 'KAM', nCarga: Infinity
+Killers.gs|var d = f[2] instanceof Date ? f[2] : fecha_(f[2]);
+Killers.gs|(ventas[skuBase_(f[6])] = ventas[skuBase_(f[6])] || []).push({ t: d.getTime(), p: num_(f[9]), q: num_(f[8]), imp: num_(f[10]) });
+Organizar.gs|var c = ORG_NIVEL_COLOR[filas[i][4]] || '#ffffff';
+Organizar.gs|h.getRange(2, 3, nF - 1, 2).setWrap(true);
+Organizar.gs|ORG_HOJAS.forEach(function (f) { reg[f[0]] = { grupo: f[1], desc: f[2], act: f[3] }; });
+Organizar.gs|if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
+Organizar.gs|var items = ORG_HOJAS.filter(function (f) { return f[1] === k && hoja(f[0]); });
+Organizar.gs|filas.push([link(f[0]), f[2], f[3], nFilas(f[0]), orgUltimo_(visto, f[0])]);
+Organizar.gs|ind.getRange(1, 4, nF, 1).setHorizontalAlignment('right').setNumberFormat('#,##0');
+Precios.gs|var nivel = norm_(filas[i][1]);
+Precios.gs|var etapa = norm_(filas[i][2]);
+Precios.gs|if (vistos[f[1]]) return;
+Precios.gs|vistos[f[1]] = true;
+Precios.gs|var s = sku_(f[6]);
+Precios.gs|var J = num_(f[9]);
+Precios.gs|var fecha = (f[2] instanceof Date) ? f[2] : fecha_(f[2]);
+Precios.gs|if (!esVentaComercial_(f[3], J)) {
+Precios.gs|if (!sku_(r[0]) || !(num_(r[1]) > 0)) return;
+Precios.gs|var ini = fechaK_(r[2]), fin = fechaK_(r[3]);
+Precios.gs|actual: '', negoc: num_(r[1]), cupon: '', recibimos: '', ini: ini, fin: fin,
+PromosKillers.gs|filas.forEach(function (f) { cuenta[f[1]] = (cuenta[f[1]] || 0) + 1; });
+WalmartApi.gs|campos[i][1] + '\n\nActual: ' + (actual ? '(ya hay uno guardado)' : '—') +

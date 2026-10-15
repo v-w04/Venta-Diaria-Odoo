@@ -73,6 +73,7 @@ del "%TEMP%\vdo_pull.txt" >nul 2>&1
 echo.
 REM =====================================================================
 echo   %AZUL%[3/4]%FIN%  Subir a Apps Script . . . . . . . . . .
+call :COLUMNAS
 REM ---- Archivos que ya no deben subirse (renombrados) ----
 if exist "apps-script\Limpieza.html" del /f /q "apps-script\Limpieza.html" >nul 2>&1
 REM El nombre viejo de este archivo (sin numero)
@@ -298,6 +299,23 @@ echo      El codigo SI subio a Apps Script. Revisa git.
 echo.
 pause
 exit /b 1
+
+:COLUMNAS
+REM Recordatorio, no bloquea: avisa si hay codigo NUEVO que lee columnas por posicion.
+where node >nul 2>&1
+if errorlevel 1 exit /b 0
+if not exist "%~dp0_columnas.js" exit /b 0
+node "%~dp0_columnas.js" >"%TEMP%\col_o.txt" 2>&1
+if errorlevel 2 goto COLNOPUDE
+if errorlevel 1 goto COLNUEVAS
+exit /b 0
+:COLNUEVAS
+echo          %ROJO%^^!  columnas por posicion NUEVAS: leer por encabezado%FIN%
+type "%TEMP%\col_o.txt"
+exit /b 0
+:COLNOPUDE
+echo          %ROJO%^^!  no pude revisar columnas%FIN%
+exit /b 0
 
 :LOGO
 REM --- Logo animado: solo en salidas exitosas, sin cls, sin pause despues ---
