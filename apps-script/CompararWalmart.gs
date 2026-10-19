@@ -102,13 +102,15 @@ function compararWalmart_() {
   if (!sh) { return { error: 'El dashboard no tiene la hoja Inventario.' }; }
   var d = sh.getDataRange().getValues();
   var m = mapaColumnas_(d[0]), c = function (k) { return m[norm_(k)]; };
-  var iS = c('sku'), iP = c('price'), iSt = c('publishedStatus'), iT = c('stockTotal');
+  var iS = c('sku'), iP = c('price'), iSt = c('publishedStatus'), iT = c('stockTotal'), iSh = c('shelf'), iPt = c('productType');
   if (iS === undefined || iP === undefined) { return { error: 'El dashboard no trae sku/price.' }; }
   var wm = {};
   for (var i = 1; i < d.length; i++) {
     var s = sku_(d[i][iS]);
     if (s) wm[s] = { precio: num_(d[i][iP]), estado: iSt === undefined ? '' : String(d[i][iSt] || ''),
-                     stock: iT === undefined ? '' : num_(d[i][iT]) };
+                     stock: iT === undefined ? '' : num_(d[i][iT]),
+                     shelf: iSh === undefined ? '' : String(d[i][iSh] || ''),
+                     tipoProd: iPt === undefined ? '' : String(d[i][iPt] || '') };
   }
 
   // KILLERS ACTIVOS por encabezado
@@ -121,12 +123,14 @@ function compararWalmart_() {
   // Mínimo aplicable que reporta el site (hoja Killers bajo minimo, ya con sus promociones); si el SKU no está ahí, el de Erik.
   var bm = null;
   try { bm = bajoMinimoDelSite_(); } catch (e) { bm = null; }
+  var actCat = [];     // para la hoja CATEGORIA REVISAR
   var cont = { OK: 0, DEJAR: 0, REVISAR: 0, CAMBIO: 0, SINMIN: 0, NOPUB: 0 }, out = [];
   for (var r = 1; r < a.length; r++) {
     var f = a[r], sku = sku_(f[xS]);
     if (!sku) continue;
     var carga = num_(f[xH]), min = typeof f[xC] === 'number' ? f[xC] : 0;
     var kamCat = xK === undefined ? '' : f[xK];
+    actCat.push({ sku: sku, kam: kamCat, prod: xN === undefined ? '' : f[xN] });
     var eBm = bm && bm.skus[sku];
     if (eBm && eBm.minimo > 0) min = eBm.minimo;
     var cupon = xE === undefined ? 0 : num_(f[xE]);
@@ -167,6 +171,8 @@ function compararWalmart_() {
     return (peso(p) - peso(q)) || ((typeof p[4] === 'number' ? p[4] : 9) - (typeof q[4] === 'number' ? q[4] : 9));
   });
 
+  try { categoriasRevisar_(actCat, wm, bm); } catch (eCat) { logWarn_('CATEGORIA REVISAR', 'No se pudo armar', { error: String(eCat && eCat.message || eCat) }); }
+
   // Solo se reescribe la hoja si el resultado cambió (la revisión corre cada pocos minutos)
   var huella = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5,
     JSON.stringify(out) + '|' + bd.b1 + '|' + bd.b2));
@@ -196,4 +202,49 @@ function compararWalmart_() {
   setProp_('HUELLA_COMPARAR', huella);
   logInfo_('COMPARAR WALMART', 'Comparación terminada', cont);
   return { total: out.length, cont: cont };
+}
+
+/**
+ * CATEGORIA REVISAR: killers cuya categoría del KAM no coincide con el departamento en que Walmart tiene
+ * publicado el producto (hoja Inventario del dashboard). Solo informativa, se reescribe sola cuando cambia.
+ * Incluye los killers activos y los que el site manda a bajo mínimo (que ya no están en ACTIVOS).
+ * Una categoría del KAM que no está en la tabla de abajo no se evalúa (no se marca nada).
+ */
+var CR_HOJA = 'CATEGORIA REVISAR';
+var CR_ENC = ['SKU', 'KAM', 'DEPARTAMENTO EN WALMART', 'TIPO DE PRODUCTO EN WALMART', 'ESTADO', '% PERDIDA (site)', 'PRODUCTO'];
+var CR_ESPERADA = {
+  'FOTOGRAFIA': ['FOTOGRAFIA'], 'CAMARAS Y LENTES': ['FOTOGRAFIA'], 'CAMARAS': ['FOTOGRAFIA'],
+  'AUDIO': ['AUDIO'],
+  'COMPUTACION': ['COMPUTADORAS'], 'TABLETS': ['COMPUTADORAS'], 'HARDWARE': ['COMPUTADORAS'],
+  'VIDEOJUEGOS': ['VIDEOJUEGOS']
+};
+function categoriasRevisar_(actCat, wm, bm) {
+  var filas = [], visto = {};
+  var evalua = function (sku, kam, prod, estado, per) {
+    if (visto[sku]) return;
+    visto[sku] = true;
+    var ok = CR_ESPERADA[norm_(kam)];
+    var w = wm[sku];
+    if (!ok || !w || !w.shelf) return;
+    if (ok.indexOf(norm_(w.shelf)) >= 0) return;
+    filas.push([sku, kam, w.shelf, w.tipoProd, estado, per === '' ? '' : per, prod]);
+  };
+  actCat.forEach(function (x) {
+    var e = bm && bm.skus[x.sku];
+    evalua(x.sku, x.kam, x.prod, e && e.perdida > bm.tope + 0.0001 ? 'FUERA (bajo mínimo)' : 'ACTIVO', e ? e.perdida / 100 : '');
+  });
+  if (bm) Object.keys(bm.skus).forEach(function (s) {
+    var e = bm.skus[s];
+    evalua(s, e.cat || '', '', e.perdida > bm.tope + 0.0001 ? 'FUERA (bajo mínimo)' : 'ACTIVO', e.perdida / 100);
+  });
+  filas.sort(function (a, b) { return (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0) || (a[0] < b[0] ? -1 : 1); });
+  var huella = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(filas)));
+  if (libro_().getSheetByName(CR_HOJA) && prop_('HUELLA_CATEGORIA_REVISAR') === huella) return;
+  var sh = hoja_(CR_HOJA, CR_ENC);
+  var n0 = sh.getLastRow();
+  var map = escribirPorEncabezado_(sh, CR_ENC, filas, { clave: 'ENC_ESCRITOS_CAT_REVISAR' });
+  if (filas.length) formatoColumna_(sh, map, '% PERDIDA (site)', filas.length, '0.0%');
+  if (sh.getFrozenRows() < 1) sh.setFrozenRows(1);
+  setProp_('HUELLA_CATEGORIA_REVISAR', huella);
+  logInfo_('CATEGORIA REVISAR', 'Actualizada', { skus: filas.length });
 }
