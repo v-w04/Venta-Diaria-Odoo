@@ -17,3 +17,6 @@ Thumbs.db
 # Respaldos del codigo anterior: pueden traer credenciales viejas
 respaldo-codigo-viejo/
 respaldo-*/
+
+# Archivos movidos para borrar a mano
+_to_delete/

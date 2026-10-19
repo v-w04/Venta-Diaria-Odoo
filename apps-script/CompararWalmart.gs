@@ -1,13 +1,13 @@
 /**
  * CompararWalmart.gs
- * Compara KILLERS ACTIVOS (killers + promociones que baja el site) contra los
+ * Compara KILLERS ACTIVOS (los killers que baja el site) contra los
  * precios reales de Walmart (hoja Inventario del WALMART DASHBOARD) y contra
  * el MÍNIMO de Erik. Solo LEE: no toca KILLERS ACTIVOS.
  * Resultado en la hoja COMPARAR WALMART, ordenado del que más baja del mínimo
  * al que menos.
  *
- *  · MÍNIMO APLICABLE: killers = mínimo de Erik; promociones = mínimo de Erik menos el
- *    descuento de comisión de la promo (que es la Carga, ver Killers.gs).
+ *  · MÍNIMO APLICABLE: el mínimo de Erik; si el SKU está en KILLERS BAJO MINIMO, el mínimo que
+ *    reporta el site (ya con sus promociones). Los cupones del KAM cubren la diferencia.
  *  · ENTRA = precio en Walmart + cupón (el cupón lo paga Walmart).
  *  · % VS MÍNIMO = (ENTRA − mínimo) / mínimo.
  *  · DECISIÓN, con dos cortes que tú ajustas (menú → Configurar bandas):
@@ -92,24 +92,6 @@ function cwPremiumVj_(sku, wm) {
   return { sku: sku, aviso: '' };
 }
 
-/**
- * Puntos de promoción (fracción, 0.07) que aplican a un SKU para el análisis:
- *   1) si el SKU está en la lista de promociones del site (APLICA = SI), los del site;
- *   2) si no, y su categoría es "PROMO SOLO EN KILLERS" (Videojuegos), la de COMISIONES
- *      cuando es premium (los killers del KAM son premium).
- * 0 si no le toca promoción.
- */
-function cwPuntosPromo_(sku, kam, promos, pc) {
-  var ps = promos ? promoSiteQueAplica_(promos, pc, sku, kam) : null;
-  if (ps && ps.red > 0) return ps.red;
-  if (pc && tipoPublicacion_(sku) === 'PREMIUM') {
-    var ck = categoriaDeSku_(pc, sku, kam);
-    var i = ck && pc.cats[ck];
-    if (i && i.soloKillers && i.red > 0) return i.red;
-  }
-  return 0;
-}
-
 function compararWalmart_() {
   var act = libro_().getSheetByName(K_ACT);
   if (!act || act.getLastRow() < 2) { return { error: 'KILLERS ACTIVOS está vacía. Corre primero "Traer killers de Site Sheet".' }; }
@@ -132,27 +114,21 @@ function compararWalmart_() {
   // KILLERS ACTIVOS por encabezado
   var a = act.getRange(1, 1, act.getLastRow(), act.getLastColumn()).getValues();
   var ma = mapaColumnas_(a[0]), g = function (k) { return ma[norm_(k)]; };
-  var xS = g('SKU'), xC = g('PRECIO'), xH = g('Carga'), xO = g('ORIGEN'), xN = g('Detalles del artículo'),
+  var xS = g('SKU'), xC = g('PRECIO'), xH = g('Carga'), xN = g('Detalles del artículo'),
       xE = g('Cupón de oferta'), xK = g('KAM');
   if (xS === undefined || xH === undefined || xC === undefined) { return { error: 'KILLERS ACTIVOS no trae SKU/PRECIO/Carga.' }; }
 
-  var promos = null, pc = null;
-  try { promos = promosDelSite_(); } catch (e) { promos = null; }
-  try { pc = promosCategoria_(); } catch (e) { pc = null; }
-
+  // Mínimo aplicable que reporta el site (hoja Killers bajo minimo, ya con sus promociones); si el SKU no está ahí, el de Erik.
+  var bm = null;
+  try { bm = bajoMinimoDelSite_(); } catch (e) { bm = null; }
   var cont = { OK: 0, DEJAR: 0, REVISAR: 0, CAMBIO: 0, SINMIN: 0, NOPUB: 0 }, out = [];
   for (var r = 1; r < a.length; r++) {
     var f = a[r], sku = sku_(f[xS]);
     if (!sku) continue;
-    var promo = xO !== undefined && String(f[xO]) === 'PROMO CATEGORIA';
     var carga = num_(f[xH]), min = typeof f[xC] === 'number' ? f[xC] : 0;
-    // Killer: se compara contra el mínimo de Erik (los cupones del KAM cubren la diferencia).
-    // Promoción: el mínimo aplicable ya trae el descuento de comisión = la Carga (mín − puntos%).
-    if (promo && min > 0 && carga > 0) min = carga;
-    // Killer que además trae promoción (site o Videojuegos): se compara contra mínimo − puntos.
     var kamCat = xK === undefined ? '' : f[xK];
-    var red = (!promo && min > 0) ? cwPuntosPromo_(sku, kamCat, promos, pc) : 0;
-    if (red > 0) min = min * (1 - red);
+    var eBm = bm && bm.skus[sku];
+    if (eBm && eBm.minimo > 0) min = eBm.minimo;
     var cupon = xE === undefined ? 0 : num_(f[xE]);
     var avisoVj = '', skuWm = sku;
     if (/VIDEOJUEGO/.test(norm_(kamCat))) { var rv = cwPremiumVj_(sku, wm); skuWm = rv.sku; avisoVj = rv.aviso; }
@@ -178,7 +154,7 @@ function compararWalmart_() {
       if (Math.abs(dif) >= 1) aviso = wp > carga ? 'Walmart más alto que tu Carga' : 'Walmart más bajo que tu Carga';
     }
     if (avisoVj) aviso = avisoVj + (aviso ? ' · ' + aviso : '');
-    out.push([sku, promo ? 'PROMO' : red > 0 ? 'KILLER + PROMO' : 'KILLER', kamCat, dec, pct, entra, min || '',
+    out.push([sku, 'KILLER', kamCat, dec, pct, entra, min || '',
               wp, carga || '', dif, aviso, w ? w.estado : '', w ? w.stock : '',
               xN === undefined ? '' : f[xN]]);
   }

@@ -23,15 +23,9 @@ function hojasProtegidas_() {
   var hojas = Object.keys(CFG.H).map(function (k) { return CFG.H[k]; });
   // Las hojas de sobreventa (WFS / Pick) también son del sistema.
   CFG.SOBREVENTA.DESTINOS.forEach(function (d) { hojas.push(d.hoja); });
-  // La copia local de las promociones del site también.
-  hojas.push(PS_ESPEJO);
-  hojas.push(K_EXC);               // excepciones de categoría
-  hojas.push(K_EXCL, K_BAJO);      // killers excluidos (manual) y killers bajo mínimo
+  hojas.push(K_BAJO);              // killers bajo mínimo (copia de Site Sheet)
   hojas.push(ORG_INDICE, ORG_GUIA);  // índice y guía del menú (Organizar.gs)
-  hojas.push(CP_HOJA, CP_TIPOS);   // carga de promociones para el site
-  hojas.push(K_FUERA);             // KILLERS FUERA (Killers.gs)
   hojas.push(PL_HOJA);             // PRECIO LIBRE (Precios.gs)
-  hojas.push(PK.HOJA);             // CARGA KILLERS (PromosKillers.gs)
   hojas.push(EX.HOJA.EXPORTAR, EX.HOJA.MINIMO, EX.HOJA.MAXIMO, EX.HOJA.VARIACIONES);   // precios para subir a Walmart (Exportar.gs)
   return hojas;
 }

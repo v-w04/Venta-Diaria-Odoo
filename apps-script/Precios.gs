@@ -340,39 +340,7 @@ function evaluarVentaWalmart_(f, tabla, killers, listaCaida, asignados) {
     return [min, base, tipo, origen, 'KILLER', dif, pct, 'KILLER', nota('Killer $' + k.precio + fin)];
   }
 
-  // 2) Promoción de comisión. Se ajusta el mínimo UNA sola vez, y solo si el
-  //    site no la trae ya (COMISIONES, "YA APLICADA EN EL SITE"):
-  //      · la del killer de ese SKU (comisión del cupón / MSI), o si no hay,
-  //      · la de su categoría (COMISIONES col. D o deducida de los killers).
-  //    mínimo ajustado = mínimo × (1 − comisión normal) ÷ (1 − comisión promo)
-  //    El killer (paso 1) es precio exacto y no se combina con nada.
-  var premium = tipo === 'PREMIUM';
-  // 2a) Promoción capturada en el site para ese SKU (APLICA = SI): el mínimo NO la trae,
-  //     así que la venta se valida contra mínimo − puntos de la promo.
-  var psw = null;
-  try { psw = promoSiteQueAplica_(promosSiteMem_(), promosCatMem_(), s, ''); } catch (e) { psw = null; }
-  if (psw && psw.red > 0) {
-    var minS = min * (1 - psw.red);
-    if (J >= minS - CFG.TOLERANCIA_PRECIO) {
-      return [min, base, tipo, origen, 'PROMOCION', dif, pct, 'PROMOCION',
-              nota('Promoción del site −' + Math.round(psw.red * 1000) / 10 + '% · mínimo ajustado $' + Math.round(minS))];
-    }
-  }
-  var p = promoQueAplica_(killers, s, fecha, grupo, premium);
-  // Rebaja de comisión BASE cuya categoría ya está aplicada en el site: el
-  // mínimo ya viene rebajado, no se vuelve a ajustar (sí la de SOLO MSI).
-  if (p && !p.soloMsi && promoYaEnSite_(killers, s, grupo)) p = null;
-  if (!p) p = promoCategoriaDe_(killers, s, grupo, premium);
-  if (p) {
-    var minAj = min * (1 - p.normal) / (1 - p.com);
-    if (J >= minAj - CFG.TOLERANCIA_PRECIO) {
-      return [min, base, tipo, origen, 'PROMOCION', dif, pct, 'PROMOCION',
-              nota('Promoción ' + (p.nombre ? p.nombre + ' ' : '') + Math.round(p.com * 1000) / 10 + '% vs ' +
-                   Math.round(p.normal * 1000) / 10 + '% · mínimo ajustado $' + Math.round(minAj))];
-    }
-  }
-
-  // 3) Killer que está en KILLERS BAJO MINIMO (Site Sheet) con pérdida de 3% o menos: está dentro del
+  // 2) Killer que está en KILLERS BAJO MINIMO (Site Sheet) con pérdida de 3% o menos: está dentro del
   //    rango aceptable, no es alerta. Los de más de 3% SÍ siguen alertando.
   var acept = null;
   try { acept = bajoMinimoAceptable_(s); } catch (e) { acept = null; }
@@ -454,21 +422,6 @@ function bajoMinimoAceptable_(sku) {
   var p = mm.ex[s] !== undefined ? mm.ex[s] : mm.base[skuBase_(s)];
   if (p === undefined || isNaN(p) || p > mm.tope + 0.0001) return null;
   return { perdida: p, tope: mm.tope };
-}
-
-/** Lista de promociones del site, leída una sola vez por corrida. */
-function promosSiteMem_() {
-  if (promosSiteMem_.v === undefined) {
-    try { promosSiteMem_.v = promosDelSite_(); } catch (e) { promosSiteMem_.v = null; }
-  }
-  return promosSiteMem_.v;
-}
-
-function promosCatMem_() {
-  if (promosCatMem_.v === undefined) {
-    try { promosCatMem_.v = promosCategoria_(); } catch (e) { promosCatMem_.v = null; }
-  }
-  return promosCatMem_.v;
 }
 
 // ── SKU ASIGNADOS ─────────────────────────────────────────────────────────

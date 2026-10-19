@@ -9,7 +9,7 @@
  * QUÉ HACE: pasa lo que trae esa hoja a KILLERS HISTORICO, que es donde ya
  * vivía todo (validación de ventas, KILLERS ACTIVOS, reporte del mes). No hay
  * lógica nueva de killers ni hoja nueva: solo cambió DE DÓNDE llegan. Por eso
- * no se hace una copia espejo como en Promociones — el histórico ya es la copia
+ * no se hace una copia espejo — el histórico ya es la copia
  * permanente de cada killer que se ha visto, incluidos los que Site Sheet ya
  * quitó.
  *
@@ -201,6 +201,21 @@ function sincronizarKillersSite_(forzar) {
       });
       return { estado: 'vacia' };
     }
+
+    // Protección: una lectura a medias (Site Sheet vaciándose o actualizándose) trae muy pocos killers.
+    // Si baja a menos de la mitad de la lectura anterior, no se acepta a la primera; solo si la siguiente
+    // lectura trae la misma cantidad (entonces sí bajaron de verdad).
+    var nAntes = Number(prop_('KILLERS_SITE_N', '0')), nAhora = s.killers.length;
+    if (nAntes >= 20 && nAhora < nAntes * 0.5 && Number(prop_('KILLERS_SITE_PARCIAL', '0')) !== nAhora) {
+      setProp_('KILLERS_SITE_PARCIAL', String(nAhora));
+      ksAvisarUnaVez_('parcial', function () {
+        logWarn_('KILLERS SITE', 'Lectura sospechosa: Site Sheet trae ' + nAhora + ' killers y la anterior ' + nAntes +
+                 '. No se aplicó; si la siguiente lectura trae lo mismo, se acepta.');
+      });
+      return { estado: 'sospechosa', n: nAhora };
+    }
+    setProp_('KILLERS_SITE_PARCIAL', '0');
+    setProp_('KILLERS_SITE_N', String(nAhora));
 
     var huella = ksHuella_(s.killers);
     if (huella === prop_(KS_HUELLA) && Number(prop_(KS_ULTIMA, '0')) > 0) {

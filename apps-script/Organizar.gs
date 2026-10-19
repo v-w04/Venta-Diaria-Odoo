@@ -31,7 +31,7 @@ var ORG_ANCHO_MIN = 60;
 
 var ORG_GRUPOS = {
   GUIA:    { titulo: '📖 GUIA',                          color: '#00796b' },
-  KILLERS: { titulo: '🔥 KILLERS Y PROMOCIONES',          color: '#d93025' },
+  KILLERS: { titulo: '🔥 KILLERS',          color: '#d93025' },
   VENTAS:  { titulo: '🏬 VENTAS Y ALERTAS DE WALMART',    color: '#1a73e8' },
   PRECIOS: { titulo: '💲 PRECIOS MINIMOS',                color: '#188038' },
   SISTEMA: { titulo: '🛠️ SISTEMA',                        color: '#e37400' },
@@ -43,18 +43,10 @@ var ORG_GRUPOS = {
 var ORG_HOJAS = [
   [ORG_GUIA,               'GUIA',    'Qué hace cada opción del menú Venta Diaria y cuál te toca', 'Auto (la rehace Ordenar)'],
 
-  ['KILLERS ACTIVOS',      'KILLERS', 'Lo que se carga a Walmart: killers vigentes + promociones de categoría (Carga = mínimo − puntos)', 'Auto, con los killers del site'],
+  ['KILLERS ACTIVOS',      'KILLERS', 'Lo que se carga a Walmart: los killers vigentes tal como los da el site', 'Auto, con los killers del site'],
   ['KILLERS BAJO MINIMO',  'KILLERS', 'Copia de Site Sheet: killers que no cubren tu mínimo, con categoría y % de pérdida. Más de 3% = no entra a ACTIVOS', 'Auto, cada ~4 min'],
-  ['KILLERS FUERA',        'KILLERS', 'Killers que salieron de ACTIVOS (pierden más del tope o están bloqueados) · de aquí salen los correos a los KAMs', 'Automática (se reescribe sola)'],
   ['PRECIO LIBRE',         'KILLERS', 'Productos que vendes siempre más baratos a propósito: no alertan bajo mínimo (por SKU base)', 'Manual (tú la editas)'],
-  ['KILLERS EXCLUIDOS',    'KILLERS', 'SKUs exactos que NO deben entrar a KILLERS ACTIVOS (Walmart pidió precio base)', 'Manual (tú la editas)'],
   ['COMPARAR WALMART',     'KILLERS', 'KILLERS ACTIVOS contra el precio real de Walmart: decisión y % vs mínimo', 'Auto, cada 15 min'],
-  ['CARGA KILLERS',        'KILLERS', 'CSV para el site: SKU, CATEGORIA y REDUCCION (PUNTOS) de los killers de videojuegos (4.5) y fotografía (7)', 'Menú: Armar CARGA KILLERS'],
-  ['CARGA PROMOCIONES',    'KILLERS', 'Lista lista para pegar en "Cargar promociones" del site (SKU base, categoría, puntos)', 'Menú: Armar carga de promociones'],
-  ['PROMO TIPOS',          'KILLERS', 'Corrige la categoría de la promo por tipo de producto de Walmart (p. ej. Accesorios de Fotografia)', 'Manual (tú la editas)'],
-  ['Promociones (site)',   'KILLERS', 'Copia de las promociones por SKU del site', 'Auto, con el site'],
-  ['EXCEPCIONES CATEGORIA','KILLERS', 'Promociones del site que NO se cargan porque Walmart las tiene en otra categoría (solo informativa)', 'Auto'],
-  ['COMISIONES',           'KILLERS', 'Comisión normal y puntos de promoción por categoría', 'Manual (tú la editas)'],
   ['KILLERS HISTORICO',    'KILLERS', 'Todos los killers que se han visto, por carga y mes', 'Auto'],
   ['KILLERS PEGAR',        'KILLERS', 'Respaldo manual: pegado de killers del seller center', 'Manual'],
 
@@ -84,13 +76,11 @@ var ORG_GUIA_MENU = [
   ['⚙️ Venta Diaria', '🔄 Importar ventas de Odoo ahora', 'Baja las ventas nuevas de Odoo y revisa precios y alertas. Es lo mismo que hace solo el trigger de 10 min.', 'Cuando quieras datos frescos ya', 'A VECES'],
   ['⚙️ Venta Diaria', '💲 Actualizar PRECIOS ERIK desde Site Sheet', 'Rehace PRECIOS ERIK con los mínimos de Site Sheet.', 'Normalmente solo (cada 15 min)', 'A VECES'],
   ['⚙️ Venta Diaria', '📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'Rehace EXPORTAR, MINIMO y MAXIMO (lógica de CAMBIO DE PRECIOS) con los precios de Site Sheet, el inventario de WM_Inv y PRECIOS VARIACIONES. Escribe solo SKU y precios (sin columnas de apoyo ni fórmulas).', 'Normalmente solo (cada 15 min)', 'A VECES'],
-  ['⚙️ Venta Diaria', '🔄 Traer killers de Site Sheet y actualizar KILLERS ACTIVOS', 'Trae los killers del site, quita los excluidos y los que pierden más de 3%, y rehace KILLERS ACTIVOS.', 'Cuando cambien killers y quieras verlo ya', 'DIARIO'],
+  ['⚙️ Venta Diaria', '🔄 Traer killers de Site Sheet y actualizar KILLERS ACTIVOS', 'Trae los killers del site, quita los que el site marca con pérdida mayor a 3% (KILLERS BAJO MINIMO), y rehace KILLERS ACTIVOS.', 'Cuando cambien killers y quieras verlo ya', 'DIARIO'],
   ['⚙️ Venta Diaria', '🎯 Procesar killers pegados (respaldo manual)', 'Procesa lo que pegaste en KILLERS PEGAR.', 'Solo si Site Sheet no trae los killers', 'SOPORTE'],
   ['⚙️ Venta Diaria', '📅 Reporte de killers del mes', 'Arma una hoja KILLERS <MES> con cada SKU, sus rangos y lo vendido en cada uno.', 'Al cierre de mes', 'A VECES'],
   ['⚙️ Venta Diaria', '📦 Revisar sobreventa (Walmart)', 'Llena Sobreventa WFS y Sobreventa Pick con los traslados en espera.', 'Normalmente solo (cada 30 min)', 'A VECES'],
   ['⚙️ Venta Diaria', '✅ Comparar KILLERS ACTIVOS contra Walmart', 'Compara lo que cargas contra el precio real de Walmart y da la decisión (DEJAR, REVISAR KAM, CAMBIO / QUITAR).', 'Después de subir precios a Walmart', 'DIARIO'],
-  ['⚙️ Venta Diaria', '🏷️ Armar carga de promociones para el site', 'Asistente: eliges categoría, puntos y marcas, y arma CARGA PROMOCIONES lista para pegar en el site.', 'Cuando vayas a cargar promociones al site', 'DIARIO'],
-  ['⚙️ Venta Diaria', '🎮 Armar CARGA KILLERS (foto y videojuegos)', 'Arma CARGA KILLERS con los killers de videojuegos (4.5 puntos) y fotografía (7 puntos), en el formato del site (SKU, CATEGORIA, REDUCCION). Se baja como CSV.', 'Cuando vayas a cargar promociones de killers al site', 'A VECES'],
   ['⚙️ Venta Diaria', '🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'Busca en Odoo los números de venta que pegaste y escribe su detalle.', 'Cuando necesites fechas de envío u otros datos de un pedido', 'A VECES'],
   ['⚙️ Venta Diaria', '📊 Resumen de Walmart', 'Muestra un resumen de las ventas de Walmart.', 'Cuando quieras ver cómo va', 'A VECES'],
   ['⚙️ Venta Diaria', '🩺 Diagnóstico', 'Revisa que todo esté conectado y dice qué falta.', 'Si algo no baja', 'SOPORTE'],
@@ -109,8 +99,8 @@ var ORG_NIVEL_COLOR = { 'DIARIO': '#d9ead3', 'A VECES': '#fff2cc', 'SOPORTE': '#
 /** Hojas con encabezado propio en otra fila o que el usuario llena: no se les pone estilo de encabezado ni se congela. */
 var ORG_SIN_ENCABEZADO = ['PRECIOS ERIK', 'Sobreventa WFS', 'Sobreventa Pick', 'KILLERS PEGAR', 'BUSCAR VENTAS', 'PRECIOS VARIACIONES'];
 /** Solo estas hojas reciben formato unificado de precio/fecha (las demás ya tienen el suyo). */
-var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'CARGA PROMOCIONES', 'COMPARAR WALMART', 'KILLERS HISTORICO',
-                       'Promociones (site)', 'WALMART', 'PEDIDOS CVA', 'Histórico de alertas'];
+var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'COMPARAR WALMART', 'KILLERS HISTORICO',
+                       'WALMART', 'PEDIDOS CVA', 'Histórico de alertas'];
 // Hojas sin encabezado en la fila 1: columnas de dinero fijas (desde la fila 3)
 var ORG_DINERO_FIJO = { 'PRECIOS ERIK': [3, 4, 15, 17] };
 

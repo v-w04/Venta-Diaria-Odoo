@@ -7,7 +7,7 @@
  * CATEGORIA…, % PERDIDA. Aquí NO se recalcula nada: solo se lee.
  *
  * ESPEJO LOCAL: cada lectura se guarda tal cual en la hoja "KILLERS BAJO MINIMO" de ESTE libro
- * (misma idea que "Promociones (site)"): si Site Sheet no responde se trabaja con la última copia,
+ * : si Site Sheet no responde se trabaja con la última copia,
  * y ahí mismo tienes la lista con su CATEGORIA para mandarla a cada KAM.
  *
  * REGLA (Luis, 08/10/2026): si el % PERDIDA del killer es MAYOR a 3%, NO entra a KILLERS ACTIVOS.
@@ -118,11 +118,6 @@ function bajoMinimoDelSite_() {
   }
   var iCat = m[norm_('CATEGORIA')], iKam = m[norm_('CATEGORIA KAM')];
   var out = { skus: {}, n: 0, tope: bmTope_(), origen: t.origen };
-  // El site NO descuenta la promoción de comisión en su mínimo. Aquí sí: el % PERDIDA se recalcula contra
-  // mínimo − puntos de la promo (misma regla que COMPARAR WALMART), para no descartar killers que en realidad cubren.
-  var promos = null, pc = null;
-  try { promos = promosDelSite_(); } catch (e0) { promos = null; }
-  try { pc = promosCategoria_(); } catch (e1) { pc = null; }
   t.datos.forEach(function (f) {
     var s = sku_(f[iSku]);
     if (!s || /^COPIA DE SITE SHEET/.test(String(f[iSku] || '').toUpperCase())) return;
@@ -130,14 +125,7 @@ function bajoMinimoDelSite_() {
     var fal = iFal === undefined ? 0 : bmNumero_(f[iFal]), mn = iMin === undefined ? 0 : bmNumero_(f[iMin]);
     if (isNaN(per)) per = mn > 0 ? fal / mn * 100 : NaN;
     if (isNaN(per)) return;
-    var perSite = per, red = 0;
-    var kamTxt = iKam !== undefined && f[iKam] ? String(f[iKam]) : (iCat === undefined ? '' : String(f[iCat] || ''));
-    try { red = cwPuntosPromo_(s, kamTxt, promos, pc) || 0; } catch (e2) { red = 0; }
-    if (red > 0 && mn > 0) {
-      var mAdj = mn * (1 - red);
-      per = Math.max(0, (mAdj - (mn - fal)) / mAdj * 100);
-    }
-    out.skus[s] = { perdida: per, perdidaSite: perSite, promo: red, falta: fal, minimo: mn, cat: iCat === undefined ? '' : String(f[iCat] || '') };
+    out.skus[s] = { perdida: per, falta: fal, minimo: mn, cat: iCat === undefined ? '' : String(f[iCat] || '') };
     out.n++;
   });
   return out;

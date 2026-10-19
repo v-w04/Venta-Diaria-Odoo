@@ -12,7 +12,6 @@
  * PRECIOS ERIK, salvo que:
  *   · había un killer de ese SKU a ese precio en la fecha de la venta
  *     (KILLERS HISTORICO + KILLERS KAM), o
- *   · había promoción de comisión y el precio alcanza el mínimo ajustado.
  *   · el SKU está en KILLERS BAJO MINIMO (Site Sheet) con pérdida de 3% o menos (rango aceptable;
  *     los de más de 3% SÍ alertan). * Nunca alertan: prefijos RES-/WL-/OB- · ventas internas, insumos y
  * pruebas · SKUs sin precio en PRECIOS ERIK.

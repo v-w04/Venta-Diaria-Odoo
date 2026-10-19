@@ -29,7 +29,7 @@ var CFG = {
   SITE_HOJA_LOG:    'Log',
 
   // Dashboard de Walmart (WM_Inv, "Walmart API"): de su hoja Inventario salen
-  // departamento, stock y nombre para la promoción de categoría. Solo lectura.
+  // precio, estado y stock de cada publicación. Solo lectura.
   WM_DASH: { ID: '122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q', HOJA: 'Inventario' },
 
   // Empresa de Odoo (la instancia es multiempresa)
@@ -44,7 +44,6 @@ var CFG = {
     K_PEGAR:  'KILLERS PEGAR',                  // pegado de Table Capture
     K_ACT:    'KILLERS ACTIVOS',                // killers vigentes (lo genera el script)
     K_HIST:   'KILLERS HISTORICO',              // todos los killers, por mes
-    K_COM:    'COMISIONES',                     // comisión normal por categoría
     LOG:      'LOG Ventas',                     // bitácora del script
     ASIGNADOS:'SKU ASIGNADOS',                  // SKUs vinculados a otro SKU
     BUSCAR:   'BUSCAR VENTAS',                  // búsqueda de pedidos pegados (BuscarVentas.gs)
