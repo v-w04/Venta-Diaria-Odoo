@@ -214,6 +214,7 @@ function actualizarActivos() {
       '  · killers vigentes: ' + (a.total - (a.porIniciar || 0)) + '\n' +
       '  · por iniciar: ' + (a.porIniciar || 0) + '\n' +
       'Fuera por bajo mínimo (lo dice el site): ' + (a.bajoMinimo || 0) + '\n' +
+      'Fuera por cobro distinto de Walmart: ' + (a.cobroDistinto || 0) + '\n' +
       'Salieron (vencidos o ya no vienen): ' + (a.salieron || 0));
   } catch (e) {
     logError_('KILLERS', e);
@@ -500,7 +501,7 @@ function reconstruirActivos_() {
   var fxPct = function (r) { return '=IF(AND(ISNUMBER(' + X('PRECIO', r) + '),ISNUMBER(' + X('PAGAN', r) + ')),' + X('PAGAN', r) + '/' + X('PRECIO', r) + ',"")'; };
   var fxCarga = function (r) { return '=' + X('Precio negociado', r); };
   var fxFechaFmt = function (r) { return '=IF(' + X('Finalización de la oferta', r) + '="","",' + X('Finalización de la oferta', r) + '+TIME(6,0,0))'; };
-  var res = { total: 0, porIniciar: 0, sinCategoria: 0, entraron: 0, bajoMinimo: 0 };
+  var res = { total: 0, porIniciar: 0, sinCategoria: 0, entraron: 0, bajoMinimo: 0, cobroDistinto: 0 };
   var filas = [];
   // Orden: primero los VIGENTES (lo que subes hoy), al final los POR INICIAR.
   var orden = Object.keys(porSku).map(function (sku) {
@@ -528,6 +529,14 @@ function reconstruirActivos_() {
   vigentes = vigentes.filter(sinBajo);
   porIniciar = porIniciar.filter(sinBajo);
   res.bajoMinimo = nBajo;
+
+  // COBRO DISTINTO (copia de Site Sheet): un SKU exacto que Walmart cobró con otra comisión NO entra a ACTIVOS.
+  var cdSkus = {}, nCd = 0;
+  try { cdSkus = cdSkusExcluidos_(); } catch (e) { logWarn_('KILLERS', 'No se pudo leer COBRO DISTINTO', { error: String(e && e.message || e) }); }
+  var sinCobro = function (sku) { if (cdSkus[sku]) { nCd++; return false; } return true; };
+  vigentes = vigentes.filter(sinCobro);
+  porIniciar = porIniciar.filter(sinCobro);
+  res.cobroDistinto = nCd;
 
   // % PERDIDA (site): solo informativo; vacío = el site no lo reporta bajo el mínimo.
   var perdidaSite_ = function (sku) {

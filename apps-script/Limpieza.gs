@@ -24,6 +24,7 @@ function hojasProtegidas_() {
   // Las hojas de sobreventa (WFS / Pick) también son del sistema.
   CFG.SOBREVENTA.DESTINOS.forEach(function (d) { hojas.push(d.hoja); });
   hojas.push(CR_HOJA);             // CATEGORIA REVISAR (CompararWalmart.gs)
+  hojas.push(CD_ESPEJO, CD_DET_ESPEJO);   // COBRO DISTINTO y su detalle (CobroDistinto.gs)
   hojas.push(K_BAJO);              // killers bajo mínimo (copia de Site Sheet)
   hojas.push(ORG_INDICE, ORG_GUIA);  // índice y guía del menú (Organizar.gs)
   hojas.push(PL_HOJA);             // PRECIO LIBRE (Precios.gs)

@@ -191,6 +191,7 @@ function sincronizarKillersSite_(forzar) {
     if (!forzar && ahora - Number(prop_(KS_REVISADO, '0')) < KS_CADA_MS) return { estado: 'reciente' };
     setProp_(KS_REVISADO, String(ahora));
     sincronizarBajoMinimo_();            // copia de "Killers bajo minimo" (Site Sheet) y aviso si cambió
+    cdSincronizar_();                    // copia de "Walmart cobro distinto" (Site Sheet), si ya existe
 
     var s = killersDelSite_();
     if (!s) return { estado: 'sin_lectura' };
