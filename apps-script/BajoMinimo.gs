@@ -104,7 +104,7 @@ function bmGuardarEspejo_(todo) {
       var accion = '';
       if (iSkuA >= 0 && String(f[iSkuA] || '') !== '' && !isNaN(per)) {
         accion = per > tope + 0.0001
-          ? 'ENVIAR CORREO AL KAM' + (iKamA >= 0 && f[iKamA] ? ' (' + f[iKamA] + ')' : '') + ': pérdida mayor a ' + tope + '%, no entra a ACTIVOS'
+          ? 'No entra a ACTIVOS: pérdida mayor a ' + tope + '%' + (iKamA >= 0 && f[iKamA] ? ' (KAM ' + f[iKamA] + ')' : '') + '. El aviso al KAM lo hace Site Sheet'
           : 'Nada: pérdida de ' + tope + '% o menos, entra a ACTIVOS';
       }
       return base.concat([accion]);

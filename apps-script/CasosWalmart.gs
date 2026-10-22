@@ -15,7 +15,7 @@
  *   · Crea la hoja si falta (una vez) y siembra los casos que ya conoces.
  *   · DETECTA problemas y los agrega como fila nueva (POR ABRIR, DETECTADO = AUTO):
  *       - De COMPARAR WALMART (cwDiagnostico_): precio en $0, SYSTEM_PROBLEM, no está en el dashboard, precio
- *         distinto a la carga. Solo si el error dura 24 h o más. Lo que ya está en tu lista de BLOQUEADOS o
+ *         distinto a la carga. Solo si el error dura 12 h o más y solo se registran en las revisiones de las 6:00 y las 12:00. Lo que ya está en tu lista de BLOQUEADOS o
  *         es despublicado (fecha de exposición vencida, sin stock) NO es caso: sale como ACCIÓN SUGERIDA en COMPARAR.
  *       - COBRO DISTINTO: cada SKU de la hoja COBRO DISTINTO (Walmart cobró más comisión) se registra una sola vez.
  *     Solo agrega si el SKU no tiene ya un caso vigente. Nunca modifica ni borra tus filas.
@@ -27,7 +27,9 @@ var CS_HOJA = 'CASOS WALMART';
 var CS_ENC = ['FOLIO WALMART', 'FECHA ABIERTO', 'SKU', 'PRODUCTO', 'TIPO', 'MOTIVO', 'ESTADO', 'CORREO ENVIADO',
               'SEGUIMIENTO', 'RESOLUCION', 'FECHA CIERRE', 'DETECTADO'];
 var CS_TIPO_CERO = 'PRECIO EN $0 EN WALMART';
-var CS_HORAS_ERROR = 24;         // horas con el mismo error antes de proponerlo como caso
+var CS_HORAS_ERROR = 12;         // horas con el mismo error antes de proponerlo como caso
+var CS_HORAS_REVISION = [6, 12]; // los casos nuevos se registran solo en estas dos revisiones al día (6:00 y 12:00)
+var CS_PROP_REVISION = 'CS_ULTIMA_REVISION';
 var CS_PROP_VISTO = 'CS_ERRORES_VISTOS';
 
 /** SKUs con caso conocido desde el inicio (Walmart los deja en $0 por un bug). */
@@ -79,6 +81,21 @@ function csTexto_(casos, sku) {
 }
 
 /**
+ * ¿Toca registrar casos nuevos? Una vez por cada revisión del día (la primera corrida a partir de las 6:00 y de las 12:00).
+ * Así a las 7:00 ya están los casos de la mañana, y no se llena la hoja a cada rato. Marca la revisión como hecha.
+ */
+function csTocaRevision_() {
+  var hora = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
+  var ranura = null;
+  CS_HORAS_REVISION.forEach(function (h) { if (hora >= h) ranura = h; });
+  if (ranura === null) return false;                       // antes de las 6:00 no se registra nada
+  var llave = csHoy_() + '|' + ranura;
+  if (prop_(CS_PROP_REVISION) === llave) return false;
+  setProp_(CS_PROP_REVISION, llave);
+  return true;
+}
+
+/**
  * Recibe los errores que HOY tienen los killers activos [{sku, producto, tipo, detalle}] y agrega como caso por
  * abrir a los SKUs cuyo error lleva CS_HORAS_ERROR horas o más y no tienen caso vigente. Devuelve cuántos agregó.
  */
@@ -86,11 +103,12 @@ function csDetectar_(errores, casos) {
   var visto = {};
   try { visto = JSON.parse(prop_(CS_PROP_VISTO) || '{}'); } catch (e) { visto = {}; }
   var ahora = Date.now(), nuevo = {}, porSku = {};
+  var toca = csTocaRevision_();                           // el reloj de cada error corre siempre; solo el registro espera la revisión
   errores.forEach(function (x) {
     var k = x.sku + '|' + x.tipo;
     var desde = visto[k] || ahora;
     nuevo[k] = desde;                                       // los errores que ya no están se olvidan solos
-    if (ahora - desde < CS_HORAS_ERROR * 3600000 || casos[x.sku]) return;
+    if (!toca || ahora - desde < CS_HORAS_ERROR * 3600000 || casos[x.sku]) return;
     var e = porSku[x.sku] || (porSku[x.sku] = { producto: x.producto, tipos: [], detalles: [] });
     e.tipos.push(x.tipo);
     if (x.detalle) e.detalles.push(x.detalle);
@@ -128,6 +146,7 @@ function csSkusConTipo_(tipo) {
 
 /** COBRO DISTINTO: cada SKU de la hoja se registra UNA vez como caso por abrir (Walmart cobró más comisión de la debida). */
 function csDetectarCobro_() {
+  if (!csTocaRevisionCobro_()) return 0;
   var cd = libro_().getSheetByName(CD_ESPEJO);
   var sh = libro_().getSheetByName(CS_HOJA);
   if (!cd || !sh || cd.getLastRow() < 2) return 0;
@@ -188,4 +207,18 @@ function csFormato_(sh) {
     ss.getRange(2, iC + 1, filas, 1).setDataValidation(SpreadsheetApp.newDataValidation()
       .requireValueInList(['SI', 'NO'], true).setAllowInvalid(true).build());
   }
+}
+
+/** Igual que csTocaRevision_ pero con su propia marca (cobro distinto se revisa en las mismas horas). */
+function csTocaRevisionCobro_() {
+  var hora = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
+  var ranura = null;
+  CS_HORAS_REVISION.forEach(function (h) { if (hora >= h) ranura = h; });
+  var primera = !libro_().getSheetByName(CS_HOJA) || prop_('CS_COBRO_INICIAL') !== '1';
+  if (ranura === null && !primera) return false;
+  var llave = csHoy_() + '|' + ranura;
+  if (!primera && prop_('CS_ULTIMA_REVISION_COBRO') === llave) return false;
+  setProp_('CS_ULTIMA_REVISION_COBRO', llave);
+  setProp_('CS_COBRO_INICIAL', '1');
+  return true;
 }
