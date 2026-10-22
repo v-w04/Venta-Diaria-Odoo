@@ -20,7 +20,7 @@
  */
 var CW_ENC = ['SKU', 'TIPO', 'KAM', 'DECISIÓN', '% VS MÍNIMO', 'ENTRA (PRECIO + CUPÓN)', 'MÍNIMO APLICABLE',
               'PRECIO EN WALMART', 'CARGA (LO QUE PUBLICAS)', 'DIFERENCIA vs CARGA', 'AVISO',
-              'ESTADO EN WALMART', 'STOCK WALMART', 'PRODUCTO', 'CASO WALMART'];
+              'ESTADO EN WALMART', 'STOCK WALMART', 'PRODUCTO', 'PROBLEMA', 'ACCIÓN SUGERIDA', 'CASO WALMART'];
 var CW_BANDA1_DEF = 3, CW_BANDA2_DEF = 10;
 
 /** Cortes de las bandas, en % positivos (3 = "hasta 3% abajo del mínimo"). */
@@ -92,19 +92,39 @@ function cwPremiumVj_(sku, wm) {
   return { sku: sku, aviso: '' };
 }
 
+/**
+ * Diagnóstico de un killer activo contra lo que dice el dashboard de Walmart.
+ * Devuelve { problema, accion, caso, detalle }: 'caso' = hay que abrir caso con Walmart (se registra en CASOS WALMART
+ * si dura 24 h o más); si no, 'accion' dice qué hacer tú. Sin problema: todo ''.
+ */
+function cwDiagnostico_(w, wp, carga, dif) {
+  var R = function (problema, accion, caso, detalle) { return { problema: problema, accion: accion, caso: !!caso, detalle: detalle || '' }; };
+  if (!w) return R('NO ESTÁ EN EL DASHBOARD', 'Revisar en seller center si el SKU cambió o se perdió; abrir caso si no aparece', true);
+  var st = norm_(w.estado), stock = Number(w.stock) || 0;
+  if (w.bloqueado) return R('BLOQUEADO (ya identificado)', 'Nada que hacer: está en tu lista de bloqueados', false);
+  if (!(w.precio > 0)) return R('PRECIO EN $0 EN WALMART', 'Walmart muestra precio 0 aunque está publicado: escribir a Walmart / abrir caso', true, 'precio en Walmart $0');
+  if (st === 'SYSTEM_PROBLEM') return R('SYSTEM_PROBLEM EN WALMART', 'Error de sistema de Walmart: abrir caso', true, 'estado SYSTEM_PROBLEM');
+  if (st === 'UNPUBLISHED' || norm_(w.ciclo) === 'RETIRED') {
+    if (stock > 0) return R('DESPUBLICADO CON STOCK', 'Revisar en seller center: puede haber vencido la fecha final de exposición; ponerle una más lejana', false);
+    return R('SIN STOCK (DESPUBLICADO)', 'Sin stock: normal', false);
+  }
+  if (Math.abs(dif) >= 1) return R('PRECIO DISTINTO A LA CARGA', 'Walmart no refleja lo que cargaste: revisa que subiste EXPORTAR y los killers; si sigue igual, abrir caso', true, 'Walmart ' + wp + ' vs carga ' + carga);
+  return R('', '', false);
+}
+
 function compararWalmart_() {
   var act = libro_().getSheetByName(K_ACT);
   if (!act || act.getLastRow() < 2) { return { error: 'KILLERS ACTIVOS está vacía. Corre primero "Traer killers de Site Sheet".' }; }
   var bd = cwBandas_();
   var casos = {};
-  try { csAsegurarHoja_(); casos = csCasosVigentes_(); } catch (eCs) { logWarn_('CASOS WALMART', 'No se pudo leer', { error: String(eCs && eCs.message || eCs) }); }
+  try { csAsegurarHoja_(); csDetectarCobro_(); casos = csCasosVigentes_(); } catch (eCs) { logWarn_('CASOS WALMART', 'No se pudo leer', { error: String(eCs && eCs.message || eCs) }); }
 
   // Precios de Walmart por SKU
   var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName(CFG.WM_DASH.HOJA);
   if (!sh) { return { error: 'El dashboard no tiene la hoja Inventario.' }; }
   var d = sh.getDataRange().getValues();
   var m = mapaColumnas_(d[0]), c = function (k) { return m[norm_(k)]; };
-  var iS = c('sku'), iP = c('price'), iSt = c('publishedStatus'), iT = c('stockTotal'), iSh = c('shelf'), iPt = c('productType');
+  var iS = c('sku'), iP = c('price'), iSt = c('publishedStatus'), iT = c('stockTotal'), iSh = c('shelf'), iPt = c('productType'), iMi = c('miEstado'), iLc = c('lifecycleStatus');
   if (iS === undefined || iP === undefined) { return { error: 'El dashboard no trae sku/price.' }; }
   var wm = {};
   for (var i = 1; i < d.length; i++) {
@@ -112,7 +132,9 @@ function compararWalmart_() {
     if (s) wm[s] = { precio: num_(d[i][iP]), estado: iSt === undefined ? '' : String(d[i][iSt] || ''),
                      stock: iT === undefined ? '' : num_(d[i][iT]),
                      shelf: iSh === undefined ? '' : String(d[i][iSh] || ''),
-                     tipoProd: iPt === undefined ? '' : String(d[i][iPt] || '') };
+                     tipoProd: iPt === undefined ? '' : String(d[i][iPt] || ''),
+                     bloqueado: iMi !== undefined && norm_(d[i][iMi]) === 'BLOQUEADO',
+                     ciclo: iLc === undefined ? '' : String(d[i][iLc] || '') };
   }
 
   // KILLERS ACTIVOS por encabezado
@@ -126,7 +148,7 @@ function compararWalmart_() {
   var bm = null;
   try { bm = bajoMinimoDelSite_(); } catch (e) { bm = null; }
   var actCat = [];     // para la hoja CATEGORIA REVISAR
-  var ceros = [];      // killers con el precio en $0 en Walmart (candidatos a caso)
+  var errores = [];    // errores de los killers contra Walmart (candidatos a caso: ver CasosWalmart.gs)
   var cont = { OK: 0, DEJAR: 0, REVISAR: 0, CAMBIO: 0, SINMIN: 0, NOPUB: 0 }, out = [];
   for (var r = 1; r < a.length; r++) {
     var f = a[r], sku = sku_(f[xS]);
@@ -144,7 +166,6 @@ function compararWalmart_() {
       dec = 'NO PUBLICADO EN WALMART'; cont.NOPUB++;
       aviso = w ? 'Walmart tiene el precio en 0' : 'No está en el dashboard';
       wp = w ? w.precio : '';
-      if (w) ceros.push({ sku: sku, producto: xN === undefined ? '' : f[xN] });
     } else {
       wp = w.precio;
       entra = wp + cupon;
@@ -162,21 +183,26 @@ function compararWalmart_() {
       if (Math.abs(dif) >= 1) aviso = wp > carga ? 'Walmart más alto que tu Carga' : 'Walmart más bajo que tu Carga';
     }
     if (avisoVj) aviso = avisoVj + (aviso ? ' · ' + aviso : '');
+    // Diagnóstico del SKU contra Walmart. Los que piden caso se registran en CASOS WALMART si duran 24 h o más.
+    var prodK = xN === undefined ? '' : f[xN];
+    var dg = cwDiagnostico_(w, wp, carga, dif);
+    if (dg.caso) errores.push({ sku: sku, producto: prodK, tipo: dg.problema, detalle: dg.detalle });
     var caso = csTexto_(casos, sku);
     if (caso) aviso = caso + (aviso ? ' · ' + aviso : '');
     out.push([sku, 'KILLER', kamCat, dec, pct, entra, min || '',
               wp, carga || '', dif, aviso, w ? w.estado : '', w ? w.stock : '',
-              xN === undefined ? '' : f[xN], caso]);
+              xN === undefined ? '' : f[xN], dg.problema, dg.accion, caso]);
   }
-  try { csDetectarCero_(ceros, casos); } catch (eDet) { logWarn_('CASOS WALMART', 'No se pudo detectar casos', { error: String(eDet && eDet.message || eDet) }); }
+  try { csDetectar_(errores, casos); } catch (eDet) { logWarn_('CASOS WALMART', 'No se pudo detectar casos', { error: String(eDet && eDet.message || eDet) }); }
 
   // Orden: lo que más baja del mínimo primero; luego avisos; al final los OK
   var peso = function (x) {
     return x[3] === 'CAMBIO / QUITAR' ? 0 : x[3] === 'REVISAR KAM' ? 1 : x[3] === 'DEJAR' ? 2 :
            x[3] === 'NO PUBLICADO EN WALMART' ? 3 : x[3] === 'SIN MÍNIMO EN ERIK' ? 4 : 5;
   };
+  var urg = function (x) { return x[14] && !/^(BLOQUEADO|SIN STOCK)/.test(x[14]) ? 0 : 1; };   // con problema por atender primero
   out.sort(function (p, q) {
-    return (peso(p) - peso(q)) || ((typeof p[4] === 'number' ? p[4] : 9) - (typeof q[4] === 'number' ? q[4] : 9));
+    return (urg(p) - urg(q)) || (peso(p) - peso(q)) || ((typeof p[4] === 'number' ? p[4] : 9) - (typeof q[4] === 'number' ? q[4] : 9));
   });
 
   try { categoriasRevisar_(actCat, wm, bm); } catch (eCat) { logWarn_('CATEGORIA REVISAR', 'No se pudo armar', { error: String(eCat && eCat.message || eCat) }); }

@@ -108,6 +108,8 @@ var ORG_FILA_ENC = { 'Sobreventa WFS': 2, 'Sobreventa Pick': 2 };
 /** Hojas sin encabezado (fórmulas / IMPORTRANGE): anchos fijos en píxeles, se ponen una vez. */
 var ORG_ANCHO_FIJO = { 'PRECIOS VARIACIONES': [300, 110] };
 function orgFilaEnc_(nombre) { return ORG_FILA_ENC[nombre] || 1; }
+/** Hojas del registro que NO llevan filtro (índices, hojas sin encabezado en la fila 1 o que llena el usuario con otro formato). */
+var ORG_SIN_FILTRO = ['PRECIOS ERIK', 'KILLERS PEGAR', 'BUSCAR VENTAS', 'PRECIOS VARIACIONES'];
 /** Solo estas hojas reciben formato unificado de precio/fecha (las demás ya tienen el suyo). */
 var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'COBRO DISTINTO', 'COBRO DISTINTO DETALLE', 'COMPARAR WALMART', 'KILLERS HISTORICO',
                        'WALMART', 'PEDIDOS CVA', 'Histórico de alertas', 'Sobreventa WFS', 'Sobreventa Pick'];
@@ -414,7 +416,11 @@ function orgAplicar_(completo) {
     if (!h || ORG_SIN_ENCABEZADO.indexOf(f[0]) !== -1) return;
     if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
   });
-  if (completo) orgAnchosFijos_(ss);
+  if (completo) {
+    orgAnchosFijos_(ss);
+    resumen.filtros = orgFiltros_(ss);
+    try { csFormato_(); } catch (eCs) { console.log('CASOS WALMART formato: ' + eCs.message); }   // listas y colores de CASOS WALMART
+  }
   resumen.formatos = completo ? orgFormatos_(ss) : 0;
   resumen.anchos = completo ? orgAnchos_(ss) : 0;
   return resumen;
@@ -481,6 +487,34 @@ function orgEncabezado_(h, color, forzar) {
   }
   if (h.getFrozenRows() < fila && nF > fila) { h.setFrozenRows(fila); cambio = true; }
   return cambio;
+}
+
+/**
+ * Filtro (el de "Crear un filtro" de Sheets) sobre el encabezado y todos los datos de cada hoja del registro, para que
+ * siempre puedas filtrar. Si la hoja ya tiene filtro con el rango bien, no se toca (tus criterios activos se quedan);
+ * si el rango quedó corto (llegaron filas nuevas) se rehace.
+ */
+function orgFiltros_(ss) {
+  var n = 0;
+  ORG_HOJAS.forEach(function (f) {
+    var nombre = f[0];
+    if (nombre === ORG_GUIA || ORG_SIN_FILTRO.indexOf(nombre) !== -1) return;
+    var h = ss.getSheetByName(nombre);
+    if (!h) return;
+    var fe = orgFilaEnc_(nombre), nF = h.getLastRow(), nC = h.getLastColumn();
+    if (nF < fe + 1 || nC < 1) return;
+    try {
+      var fil = h.getFilter();
+      if (fil) {
+        var r = fil.getRange();
+        if (r.getRow() === fe && r.getLastRow() >= nF && r.getLastColumn() >= nC) return;
+        fil.remove();
+      }
+      h.getRange(fe, 1, nF - fe + 1, nC).createFilter();
+      n++;
+    } catch (e) { console.log('Filtro ' + nombre + ': ' + e.message); }
+  });
+  return n;
 }
 
 /** Anchos fijos para hojas sin encabezado (ORG_ANCHO_FIJO). Una sola vez por hoja; si luego los cambias a mano se respetan. */

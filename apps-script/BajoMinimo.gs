@@ -20,6 +20,7 @@
 var BM_HOJA = 'Killers bajo minimo';          // hoja en Site Sheet
 var BM_ENC  = 'BAJO_MIN_ENC';                  // firma de encabezados de la última copia
 var BM_HUELLA = 'BAJO_MIN_HUELLA';             // huella de los SKUs descartados
+var BM_COL_ACCION = 'ACCIÓN SUGERIDA';          // columna que agrega el script en KILLERS BAJO MINIMO
 var BM_TOPE_DEF = 3;                           // % de pérdida a partir del cual no entra
 
 function bmTope_() {
@@ -88,10 +89,30 @@ function bmGuardarEspejo_(todo) {
     }
     setProp_(BM_ENC, firma);
     var sh = hoja_(K_BAJO, null);
-    // Solo se escriben las columnas del site (por encabezado); las que agregues tú, y sus formatos, se quedan.
-    var map = escribirPorEncabezado_(sh, enc, todo.slice(1), { clave: 'ENC_ESCRITOS_K_BAJO' });
+    // Columna del script: qué hacer con cada killer (correo al KAM si la pérdida pasa del tope). Se calcula aquí, no viene del site.
+    var iPerA = -1, iKamA = -1, iSkuA = -1;
+    enc.forEach(function (x, i) {
+      var k = norm_(x);
+      if (iPerA < 0 && k.indexOf('PERDIDA') >= 0) iPerA = i;
+      if (k === 'CATEGORIA KAM') iKamA = i;
+      if (iSkuA < 0 && (k === 'SKU WALMART' || k === 'SKU')) iSkuA = i;
+    });
+    var tope = bmTope_();
+    var encC = enc.filter(function (x) { return norm_(x) !== norm_(BM_COL_ACCION); }).concat([BM_COL_ACCION]);
+    var filasC = todo.slice(1).map(function (f) {
+      var base = f.slice(0, enc.length), per = iPerA < 0 ? NaN : bmPorcentaje_(f[iPerA]);
+      var accion = '';
+      if (iSkuA >= 0 && String(f[iSkuA] || '') !== '' && !isNaN(per)) {
+        accion = per > tope + 0.0001
+          ? 'ENVIAR CORREO AL KAM' + (iKamA >= 0 && f[iKamA] ? ' (' + f[iKamA] + ')' : '') + ': pérdida mayor a ' + tope + '%, no entra a ACTIVOS'
+          : 'Nada: pérdida de ' + tope + '% o menos, entra a ACTIVOS';
+      }
+      return base.concat([accion]);
+    });
+    // Solo se escriben las columnas del site y la ACCIÓN (por encabezado); las que agregues tú, y sus formatos, se quedan.
+    var map = escribirPorEncabezado_(sh, encC, filasC, { clave: 'ENC_ESCRITOS_K_BAJO' });
     if (sh.getFrozenRows() < 1) sh.setFrozenRows(1);
-    sh.getRange(todo.length + 2, map.pos[0]).setValue('Copia de Site Sheet · ' + ahora_());
+    sh.getRange(todo.length + 2, map.pos[0]).setValue('Copia de Site Sheet · ' + ahora_());   // (todo.length = encabezado + datos)
     var cPer = -1;
     enc.forEach(function (x, i) { if (cPer < 0 && norm_(x).indexOf('PERDIDA') >= 0) cPer = map.pos[i]; });
     if (cPer > 0) { try { bmColorPerdida_(sh, cPer); } catch (e2) { logWarn_('BAJO MINIMO', 'No se pudo poner el color de % PERDIDA', { error: String(e2 && e2.message || e2) }); } }
