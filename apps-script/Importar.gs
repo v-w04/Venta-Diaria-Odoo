@@ -61,7 +61,6 @@ function importarVentasAhora() {
 }
 
 function importarVentas_() {
-  migrarOrdenesUnaVez_();
   repararFormatosUnaVez_();
 
   var t0 = Date.now();
@@ -225,45 +224,6 @@ function recortarPorFecha_(nombreHoja, colFecha, dias) {
   }
   return borrar;
 }
-
-/**
- * UNA sola vez: vacía y elimina "Órdenes de venta (acumulado)".
- * Antes de borrarla pasa lo que sirve:
- *   · cliente WALMART que no esté en WALMART  → WALMART (sin análisis: son
- *     ventas viejas; compararlas contra el precio de hoy daría alertas falsas)
- *   · SKU -CVA que no esté en PEDIDOS CVA     → PEDIDOS CVA (no entran al
- *     reporte diario: son histórico)
- */
-function migrarOrdenesUnaVez_() {
-  if (prop_('ORDENES_MIGRADAS') === '1') return;
-  var ss = libro_();
-  var sh = ss.getSheetByName(CFG.HOJA_ORDENES_VIEJA);
-  if (!sh) { setProp_('ORDENES_MIGRADAS', '1'); return; }
-
-  var n = ultimaFilaColA_(sh);
-  var wm = [], cva = [], total = 0;
-  if (n >= 2) {
-    sh.getRange(2, 1, n - 1, 12).getValues().forEach(function (f) {
-      if (f[0] === '' || f[0] === null || isNaN(Number(f[0]))) return;
-      total++;
-      if (esWalmart_(f[3])) wm.push(f);
-      if (esCVA_(f[6])) cva.push(f);
-    });
-  }
-
-  var aWm = agregarSinDuplicar_(CFG.H.WALMART, ENC_WALMART, wm).length;
-
-  marcaCvaInicial_();
-  var aCva = agregarSinDuplicar_(CFG.H.CVA, ENC_VENTAS, cva).length;
-  if (aCva) setProp_('CVA_FILA_AVISADA', String(ultimaFilaColA_(ss.getSheetByName(CFG.H.CVA))));
-
-  ss.deleteSheet(sh);
-  setProp_('ORDENES_MIGRADAS', '1');
-  logOK_('MIGRAR', 'Se eliminó "' + CFG.HOJA_ORDENES_VIEJA + '"', {
-    filasRevisadas: total, walmartPasadas: aWm, cvaPasadas: aCva
-  });
-}
-
 
 /**
  * SKU ASIGNADOS: si no existe, la crea ya con formato.

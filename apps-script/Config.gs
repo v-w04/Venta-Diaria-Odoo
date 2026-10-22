@@ -50,9 +50,6 @@ var CFG = {
     COMPARAR: 'COMPARAR WALMART'                // KILLERS ACTIVOS vs precios reales (CompararWalmart.gs)
   },
 
-  // Hoja vieja que se elimina: lo que traiga de WALMART y -CVA se pasa a sus
-  // hojas y luego se borra (una sola vez, ver migrarOrdenesUnaVez_).
-  HOJA_ORDENES_VIEJA: 'Órdenes de venta (acumulado)',
   HOJA_CUPONES_VIEJA: 'CUPONES WALMART HIST',   // se pasa a KILLERS HISTORICO y se borra
 
   // ── PRECIOS ERIK — columnas que respeta el script ───────────────────────

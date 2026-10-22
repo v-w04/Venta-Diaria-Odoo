@@ -32,18 +32,11 @@
  */
 
 var K_PEGAR = 'KILLERS PEGAR';
-var K_KAM   = 'KILLERS KAM';
 var K_ACT   = 'KILLERS ACTIVOS';
 var K_HIST  = 'KILLERS HISTORICO';
 var K_BAJO  = 'KILLERS BAJO MINIMO';     // killers cuyo "nos pagan" no cubre el mínimo (se descartan de ACTIVOS)
 var MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
              'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
-
-// DESCUENTO %: si no te dieron precio sino "7% abajo del mínimo" (como la hoja
-// de Fotografía), deja PRECIO NEGOCIADO vacío y pon aquí 7%. El precio sale
-// del mínimo de PRECIOS ERIK, redondeado a terminar en 9.
-var ENC_K_KAM = ['SKU', 'PRECIO NEGOCIADO', 'CUPON', 'INICIO', 'FIN',
-                 'COMISION CUPON', 'CATEGORIA', 'NOTA', 'DESCUENTO %'];
 
 // Histórico: índices fijos (0-based) para no depender de letras sueltas
 var ENC_K_HIST = ['CARGA', 'CARGA #', 'VISTO EN CARGA #', 'SKU', 'SKU GENERAL',
@@ -140,28 +133,9 @@ function ddmm_(d) {
 
 function asegurarHojasKillers_() {
   var ss = libro_();
-  quitarHojasSobrantesUnaVez_();
   if (!ss.getSheetByName(K_PEGAR)) hoja_(K_PEGAR, null);
   hoja_(K_HIST, ENC_K_HIST);
   hoja_(K_ACT, ENC_K_ACT);
-}
-
-/**
- * UNA vez: quita KILLERS KAM (los killers del KAM ya llegan en el pegado del
- * seller center). Solo se
- * borran si no tienen datos capturados por ti.
- */
-function quitarHojasSobrantesUnaVez_() {
-  if (prop_('HOJAS_SOBRANTES_QUITADAS') === '1') return;
-  var ss = libro_();
-  [K_KAM].forEach(function (nombre) {
-    var sh = ss.getSheetByName(nombre);
-    if (!sh) return;
-    if (nombre === K_KAM && ultimaFilaColA_(sh) > 1) return;   // trae datos: se respeta
-    ss.deleteSheet(sh);
-    logOK_('KILLERS', 'Hoja quitada: ' + nombre);
-  });
-  setProp_('HOJAS_SOBRANTES_QUITADAS', '1');
 }
 
 /** Siguiente carga: número global y nombre del mes ("SEPTIEMBRE 2026-2"). */
@@ -371,47 +345,6 @@ function guardarEnHistorico_(lista, carga) {
   return { nuevos: nuevas.length, repetidos: repetidos };
 }
 
-/** KAM → objetos killer. */
-function leerKam_(tabla) {
-  var sh = libro_().getSheetByName(K_KAM);
-  if (!sh || sh.getLastRow() < 2) return [];
-  var descDe = function (r) { return descKam_(r[8]); };
-  return leerPorEncabezado_(sh, ENC_K_KAM)   // por encabezado (SKU, PRECIO NEGOCIADO, CUPON, INICIO, FIN, …)
-    .filter(function (r) { return sku_(r[0]) && (num_(r[1]) > 0 || descDe(r) > 0); })
-    .map(function (r) {
-      var desc = num_(r[1]) > 0 ? '' : descDe(r);
-      var negoc = num_(r[1]);
-      if (desc) {
-        tabla = tabla || tablaPrecios_();
-        negoc = precioConDescuento_(minimoDe_(tabla, r[0]), desc);
-      }
-      var cupon = num_(r[2]);
-      var comCup = pct_(r[5]), comMsi = '';
-      return {
-        sku: sku_(r[0]), general: skuBase_(r[0]), detalles: String(r[7] || 'Autorizado por KAM'),
-        negoc: negoc, cupon: cupon, recibimos: negoc + cupon, desc: desc,
-        ini: fechaK_(r[3]), fin: fechaK_(r[4]), comCup: comCup, comMsi: comMsi, wfs: '',
-        msi: '', devol: '', disp: '', obs: '',
-        origen: 'KAM', categoria: String(r[6] || ''), carga: 'KAM', nCarga: Infinity
-      };
-    })
-    .filter(function (k) { return k.negoc > 0; });
-}
-
-/** "-7%", "7%", -0.07, 0.07, -4.5, "4.5" → 0.07 / 0.045 */
-function descKam_(v) {
-  if (v === '' || v === null || v === undefined) return 0;
-  var txt = String(v), n = Math.abs(typeof v === 'number' ? v : Number(txt.replace('%', '').trim()));
-  if (isNaN(n) || !n) return 0;
-  return (txt.indexOf('%') >= 0 || n >= 1) ? n / 100 : n;
-}
-
-/** Igual que tu hoja de Fotografía: INT((mín − mín×desc)/10)*10+9 */
-function precioConDescuento_(minimo, desc) {
-  if (!(minimo > 0)) return 0;
-  return Math.floor((minimo - minimo * desc) / 10) * 10 + 9;
-}
-
 /** Renglones del histórico como objetos. */
 function leerHistorico_() {
   var sh = libro_().getSheetByName(K_HIST);
@@ -462,7 +395,6 @@ function reconstruirActivos_() {
   var ultima = Number(prop_('KILLERS_ULTIMA_CARGA', '0'));
   var tabla = tablaPrecios_();
   var hist = leerHistorico_();
-  var kam = leerKam_(tabla);
   var ahora = Date.now();
 
   // Un rango que Walmart ya quitó no regresa a Activos (sí queda en el
@@ -478,7 +410,6 @@ function reconstruirActivos_() {
     if (k.origen === 'MEMORIA ANTERIOR') return;
     (porSku[k.sku] = porSku[k.sku] || []).push(k);
   });
-  kam.forEach(function (k) { (porSku[k.sku] = porSku[k.sku] || []).push(k); });
 
   var previos = {};
   var cSkuA = colDe_(sh, 'SKU') || 1;             // la columna SKU donde esté (puedes mover o insertar columnas)
@@ -647,7 +578,7 @@ function reporteKillersMes_(anio, mes) {
   var fin = new Date(anio, mes, 1).getTime() - 1;
   var nombre = 'KILLERS ' + MESES[mes - 1] + ' ' + anio;
 
-  var rangos = leerHistorico_().concat(leerKam_()).filter(function (k) {
+  var rangos = leerHistorico_().filter(function (k) {
     var a = k.ini instanceof Date ? ms_(k.ini) : -Infinity;
     var b = k.fin instanceof Date ? ms_(k.fin) : Infinity;
     return a <= fin && b >= ini;
@@ -704,7 +635,7 @@ function killersParaValidar_(tabla) {
     if (!llave) return;
     (mapa[llave] = mapa[llave] || []).push(e);
   };
-  leerHistorico_().concat(leerKam_(tabla)).forEach(function (k) {
+  leerHistorico_().forEach(function (k) {
     if (!k.negoc) return;
     var e = { precio: k.negoc, ini: k.ini, fin: k.fin, nCarga: k.nCarga };
     add(k.sku, e); add(k.general, e);
