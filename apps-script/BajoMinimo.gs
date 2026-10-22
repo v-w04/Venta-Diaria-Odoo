@@ -174,8 +174,13 @@ function bmColorPerdida_(sh, col) {
     var cond = r.getBooleanCondition();
     var bg = cond && cond.getBackgroundObject && cond.getBackgroundObject();
     var c = bg ? String(bg.asRgbColor().asHexString()).toLowerCase() : '';
+    if (c !== ROJO && c !== VERDE) return false;
+    // Regla nuestra = misma fórmula de % (aunque haya quedado sobre una columna vieja o sobre dos rangos):
+    // se reemplaza, así no se acumulan reglas repetidas ni se pinta una columna que ya no es % PERDIDA.
+    var f = String((cond.getCriteriaValues && cond.getCriteriaValues()[0]) || '');
+    if (/ISNUMBER\(.*IF\(ABS\(.*\*100/i.test(f)) return true;
     var rs = r.getRanges();
-    return rs.length === 1 && rs[0].getColumn() === col && (c === ROJO || c === VERDE);
+    return rs.length === 1 && rs[0].getColumn() === col;
   };
   var reglas = sh.getConditionalFormatRules().filter(function (r) { return !propias(r); });
   reglas.push(SpreadsheetApp.newConditionalFormatRule().setRanges([rango])

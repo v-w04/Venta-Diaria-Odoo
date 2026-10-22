@@ -44,11 +44,11 @@ var ORG_HOJAS = [
   [ORG_GUIA,               'GUIA',    'Qué hace cada opción del menú Venta Diaria y cuál te toca', 'Auto (la rehace Ordenar)'],
 
   ['KILLERS ACTIVOS',      'KILLERS', 'Lo que se carga a Walmart: los killers vigentes tal como los da el site', 'Auto, con los killers del site'],
-  ['KILLERS BAJO MINIMO',  'KILLERS', 'Copia de Site Sheet: killers que no cubren tu mínimo, con categoría y % de pérdida. Más de 3% = no entra a ACTIVOS', 'Auto, cada ~4 min'],
+  ['KILLERS BAJO MINIMO',  'KILLERS', 'Copia de Site Sheet: killers que no cubren tu mínimo, con categoría y % de pérdida. Más de 3% = no entra a ACTIVOS', 'Auto, con cada importación o revisión de precios (10-15 min)'],
   ['PRECIO LIBRE',         'KILLERS', 'Productos que vendes siempre más baratos a propósito: no alertan bajo mínimo (por SKU base)', 'Manual (tú la editas)'],
   ['CATEGORIA REVISAR',    'KILLERS', 'Killers cuya categoría del KAM no coincide con el departamento de Walmart (aumentan la pérdida); para corregirlos en el site', 'Auto, con COMPARAR WALMART'],
-  ['COBRO DISTINTO',       'KILLERS', 'Copia de Site Sheet: SKUs a los que Walmart les cobró más comisión de la debida. Un SKU aquí NO entra a KILLERS ACTIVOS', 'Auto, cada ~4 min'],
-  ['COBRO DISTINTO DETALLE','KILLERS', 'Copia de Site Sheet: el detalle por pedido de COBRO DISTINTO', 'Auto, cada ~4 min'],
+  ['COBRO DISTINTO',       'KILLERS', 'Copia de Site Sheet: SKUs a los que Walmart les cobró más comisión de la debida. Un SKU aquí NO entra a KILLERS ACTIVOS', 'Auto, con cada importación o revisión de precios (10-15 min)'],
+  ['COBRO DISTINTO DETALLE','KILLERS', 'Copia de Site Sheet: el detalle por pedido de COBRO DISTINTO', 'Auto, con cada importación o revisión de precios (10-15 min)'],
   ['COMPARAR WALMART',     'KILLERS', 'KILLERS ACTIVOS contra el precio real de Walmart: decisión y % vs mínimo', 'Auto, cada 15 min'],
   ['KILLERS HISTORICO',    'KILLERS', 'Todos los killers que se han visto, por carga y mes', 'Auto'],
   ['KILLERS PEGAR',        'KILLERS', 'Respaldo manual: pegado de killers del seller center', 'Manual'],
@@ -77,18 +77,18 @@ var ORG_HOJAS = [
  */
 var ORG_GUIA_MENU = [
   ['⚙️ Venta Diaria', '🔄 Importar ventas de Odoo ahora', 'Baja las ventas nuevas de Odoo y revisa precios y alertas. Es lo mismo que hace solo el trigger de 10 min.', 'Cuando quieras datos frescos ya', 'A VECES'],
-  ['⚙️ Venta Diaria', '💲 Actualizar PRECIOS ERIK desde Site Sheet', 'Rehace PRECIOS ERIK con los mínimos de Site Sheet.', 'Normalmente solo (cada 15 min)', 'A VECES'],
-  ['⚙️ Venta Diaria', '📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'Rehace EXPORTAR, MINIMO y MAXIMO (lógica de CAMBIO DE PRECIOS) con los precios de Site Sheet, el inventario de WM_Inv y PRECIOS VARIACIONES. Escribe solo SKU y precios (sin columnas de apoyo ni fórmulas).', 'Normalmente solo (cada 15 min)', 'A VECES'],
   ['⚙️ Venta Diaria', '🔄 Traer killers de Site Sheet y actualizar KILLERS ACTIVOS', 'Trae los killers del site, quita los que el site marca con pérdida mayor a 3% (KILLERS BAJO MINIMO) y los de COBRO DISTINTO, y rehace KILLERS ACTIVOS.', 'Cuando cambien killers y quieras verlo ya', 'DIARIO'],
-  ['⚙️ Venta Diaria', '🎯 Procesar killers pegados (respaldo manual)', 'Procesa lo que pegaste en KILLERS PEGAR.', 'Solo si Site Sheet no trae los killers', 'SOPORTE'],
-  ['⚙️ Venta Diaria', '📅 Reporte de killers del mes', 'Arma una hoja KILLERS <MES> con cada SKU, sus rangos y lo vendido en cada uno.', 'Al cierre de mes', 'A VECES'],
-  ['⚙️ Venta Diaria', '📦 Revisar sobreventa (Walmart)', 'Llena Sobreventa WFS y Sobreventa Pick con los traslados en espera.', 'Normalmente solo (cada 30 min)', 'A VECES'],
   ['⚙️ Venta Diaria', '✅ Comparar KILLERS ACTIVOS contra Walmart', 'Compara lo que cargas contra el precio real de Walmart y da la decisión (DEJAR, REVISAR KAM, CAMBIO / QUITAR).', 'Después de subir precios a Walmart', 'DIARIO'],
-  ['⚙️ Venta Diaria', '🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'Busca en Odoo los números de venta que pegaste y escribe su detalle.', 'Cuando necesites fechas de envío u otros datos de un pedido', 'A VECES'],
-  ['⚙️ Venta Diaria', '📊 Resumen de Walmart', 'Muestra un resumen de las ventas de Walmart.', 'Cuando quieras ver cómo va', 'A VECES'],
-  ['⚙️ Venta Diaria', '🩺 Diagnóstico', 'Revisa que todo esté conectado y dice qué falta.', 'Si algo no baja', 'SOPORTE'],
-  ['⚙️ Venta Diaria', '🧹 Limpiar hojas que no uso…', 'Te deja elegir hojas para borrar (con respaldo) o compactarlas.', 'Si el libro se acerca al límite de celdas', 'CUIDADO'],
-  ['⚙️ Venta Diaria', '🗂️ Ordenar hojas e índice', 'Pone colores, orden y encabezados iguales, rehace el Índice y esta guía, BORRA respaldos y temporales, y manda al final (sin borrarlas) las hojas que parecen sin uso.', 'Cuando aparezca una hoja nueva o de vez en cuando', 'CUIDADO'],
+  ['⚙️ Venta Diaria', '📤 Actualizar EXPORTAR, MINIMO y MAXIMO', 'Rehace EXPORTAR, MINIMO y MAXIMO (lógica de CAMBIO DE PRECIOS) con los precios de Site Sheet, el inventario de WM_Inv y PRECIOS VARIACIONES. Escribe solo SKU y precios (sin columnas de apoyo ni fórmulas).', 'Normalmente solo (cada 15 min)', 'A VECES'],
+  ['🔥 Killers', '🎯 Procesar killers pegados (respaldo manual)', 'Procesa lo que pegaste en KILLERS PEGAR.', 'Solo si Site Sheet no trae los killers', 'SOPORTE'],
+  ['🔥 Killers', '📅 Reporte de killers del mes', 'Arma una hoja KILLERS <MES> con cada SKU, sus rangos y lo vendido en cada uno.', 'Al cierre de mes', 'A VECES'],
+  ['💲 Precios', '💲 Actualizar PRECIOS ERIK desde Site Sheet', 'Rehace PRECIOS ERIK con los mínimos de Site Sheet.', 'Normalmente solo (cada 15 min)', 'A VECES'],
+  ['🏬 Ventas y Walmart', '🔎 Buscar ventas (pegadas en BUSCAR VENTAS)', 'Busca en Odoo los números de venta que pegaste y escribe su detalle.', 'Cuando necesites fechas de envío u otros datos de un pedido', 'A VECES'],
+  ['🏬 Ventas y Walmart', '📦 Revisar sobreventa (Walmart)', 'Llena Sobreventa WFS y Sobreventa Pick con los traslados en espera.', 'Normalmente solo (cada 30 min)', 'A VECES'],
+  ['🏬 Ventas y Walmart', '📊 Resumen de Walmart', 'Muestra un resumen de las ventas de Walmart.', 'Cuando quieras ver cómo va', 'A VECES'],
+  ['🛠️ Mantenimiento', '🩺 Diagnóstico', 'Revisa que todo esté conectado y dice qué falta.', 'Si algo no baja', 'SOPORTE'],
+  ['🛠️ Mantenimiento', '🗂️ Ordenar hojas e índice', 'Pone colores, orden y encabezados iguales, rehace el Índice y esta guía, BORRA respaldos y temporales, y manda al final (sin borrarlas) las hojas que parecen sin uso.', 'Cuando aparezca una hoja nueva o de vez en cuando', 'CUIDADO'],
+  ['🛠️ Mantenimiento', '🧹 Limpiar hojas que no uso…', 'Te deja elegir hojas para borrar (con respaldo) o compactarlas.', 'Si el libro se acerca al límite de celdas', 'CUIDADO'],
   ['Configuración', '🔌 Configurar Odoo…', 'Guarda los datos de conexión a Odoo.', 'Una vez', 'SOPORTE'],
   ['Configuración', '🧪 Probar conexión a Odoo', 'Prueba que Odoo conteste.', 'Si algo no baja', 'SOPORTE'],
   ['Configuración', '⚙️ Configurar bandas de alerta de precios…', 'Cambia los cortes de DEJAR / REVISAR KAM / CAMBIO (3% y 10%).', 'Si quieres otros cortes', 'SOPORTE'],
@@ -100,10 +100,15 @@ var ORG_GUIA_MENU = [
 var ORG_NIVEL_COLOR = { 'DIARIO': '#d9ead3', 'A VECES': '#fff2cc', 'SOPORTE': '#eeeeee', 'CUIDADO': '#f4cccc' };
 
 /** Hojas con encabezado propio en otra fila o que el usuario llena: no se les pone estilo de encabezado ni se congela. */
-var ORG_SIN_ENCABEZADO = ['PRECIOS ERIK', 'Sobreventa WFS', 'Sobreventa Pick', 'KILLERS PEGAR', 'BUSCAR VENTAS', 'PRECIOS VARIACIONES'];
+var ORG_SIN_ENCABEZADO = ['PRECIOS ERIK', 'KILLERS PEGAR', 'BUSCAR VENTAS', 'PRECIOS VARIACIONES'];
+/** Hojas cuyo encabezado NO está en la fila 1 (la fila 1 trae un título o fecha): fila del encabezado. */
+var ORG_FILA_ENC = { 'Sobreventa WFS': 2, 'Sobreventa Pick': 2 };
+/** Hojas sin encabezado (fórmulas / IMPORTRANGE): anchos fijos en píxeles, se ponen una vez. */
+var ORG_ANCHO_FIJO = { 'PRECIOS VARIACIONES': [300, 110] };
+function orgFilaEnc_(nombre) { return ORG_FILA_ENC[nombre] || 1; }
 /** Solo estas hojas reciben formato unificado de precio/fecha (las demás ya tienen el suyo). */
 var ORG_CON_FORMATO = ['KILLERS BAJO MINIMO', 'COBRO DISTINTO', 'COBRO DISTINTO DETALLE', 'COMPARAR WALMART', 'KILLERS HISTORICO',
-                       'WALMART', 'PEDIDOS CVA', 'Histórico de alertas'];
+                       'WALMART', 'PEDIDOS CVA', 'Histórico de alertas', 'Sobreventa WFS', 'Sobreventa Pick'];
 // Hojas sin encabezado en la fila 1: columnas de dinero fijas (desde la fila 3)
 var ORG_DINERO_FIJO = { 'PRECIOS ERIK': [3, 4, 15, 17] };
 
@@ -281,8 +286,9 @@ function orgFormatosHoja_(h) {
     });
     return total;
   }
-  if (nF < 2 || nC < 1) return 0;
-  var muestra = h.getRange(1, 1, Math.min(nF, 8), nC).getValues();
+  var fe = orgFilaEnc_(h.getName());
+  if (nF < fe + 1 || nC < 1) return 0;
+  var muestra = h.getRange(fe, 1, Math.min(nF - fe + 1, 8), nC).getValues();
   var enc = muestra[0], legado = orgFmtLegado_();
   for (var c = 0; c < nC; c++) {
     var t = orgNorm_(enc[c]);
@@ -297,7 +303,7 @@ function orgFormatosHoja_(h) {
     if (!hay) continue;
     // Formato suave: solo celdas en General (o con un formato viejo del script la primera vez). Si ya le
     // pusiste tu propio formato a la columna, se respeta y se extiende a los renglones nuevos.
-    total += formatoSuave_(h, c + 1, 2, nF - 1, tipo === 'D' ? ORG_FMT_DINERO : ORG_FMT_FECHA, legado);
+    total += formatoSuave_(h, c + 1, fe + 1, nF - fe, tipo === 'D' ? ORG_FMT_DINERO : ORG_FMT_FECHA, legado);
   }
   return total;
 }
@@ -406,6 +412,7 @@ function orgAplicar_(completo) {
     if (!h || ORG_SIN_ENCABEZADO.indexOf(f[0]) !== -1) return;
     if (orgEncabezado_(h, ORG_GRUPOS[f[1]].color, completo)) resumen.encabezados++;
   });
+  if (completo) orgAnchosFijos_(ss);
   resumen.formatos = completo ? orgFormatos_(ss) : 0;
   resumen.anchos = completo ? orgAnchos_(ss) : 0;
   return resumen;
@@ -426,6 +433,7 @@ function orgAnchos_(ss) {
   ORG_HOJAS.forEach(function (f) {
     var nombre = f[0];
     if (nombre === ORG_GUIA || ORG_SIN_ENCABEZADO.indexOf(nombre) !== -1) return;
+    var fe = orgFilaEnc_(nombre);
     var h = ss.getSheetByName(nombre);
     if (!h) return;
     var nC = Math.min(h.getLastColumn(), 60);
@@ -433,7 +441,7 @@ function orgAnchos_(ss) {
     if (new Date().getTime() > limite) { faltan.push(nombre); return; }
     try {
       orgReintentar_(function () {
-        var datos = h.getRange(1, 1, Math.min(h.getLastRow(), 301), nC).getDisplayValues();
+        var datos = h.getRange(fe, 1, Math.max(Math.min(h.getLastRow() - fe + 1, 301), 1), nC).getDisplayValues();
         // Solo se ajustan las columnas que NO se habían ajustado antes (por encabezado). Si luego cambias
         // un ancho a mano, o mueves la columna, se respeta; una columna nueva sí se ajusta.
         var ya = Array.isArray(hechas[nombre]) ? hechas[nombre] : [];
@@ -459,17 +467,33 @@ function orgAnchos_(ss) {
 
 /** Estilo del encabezado (fila 1) y fila congelada. true si cambió algo. */
 function orgEncabezado_(h, color, forzar) {
+  var fila = orgFilaEnc_(h.getName());
   var nC = h.getLastColumn(), nF = h.getLastRow();
-  if (nC < 1 || nF < 1) return false;
-  var enc = h.getRange(1, 1, 1, nC);
-  if (!String(h.getRange(1, 1).getValue() || '') && nC === 1) return false;
+  if (nC < 1 || nF < fila) return false;
+  var enc = h.getRange(fila, 1, 1, nC);
+  if (!String(h.getRange(fila, 1).getValue() || '') && nC === 1) return false;
   var cambio = false;
   if (forzar || enc.getCell(1, 1).getBackground().toLowerCase() !== color) {
     enc.setFontWeight('bold').setFontColor('#ffffff').setBackground(color).setVerticalAlignment('middle');
     cambio = true;
   }
-  if (h.getFrozenRows() === 0 && nF > 1) { h.setFrozenRows(1); cambio = true; }
+  if (h.getFrozenRows() < fila && nF > fila) { h.setFrozenRows(fila); cambio = true; }
   return cambio;
+}
+
+/** Anchos fijos para hojas sin encabezado (ORG_ANCHO_FIJO). Una sola vez por hoja; si luego los cambias a mano se respetan. */
+function orgAnchosFijos_(ss) {
+  var props = PropertiesService.getScriptProperties(), hechas = {};
+  try { hechas = JSON.parse(props.getProperty('ORG_ANCHO_FIJO_OK') || '{}'); } catch (e) {}
+  Object.keys(ORG_ANCHO_FIJO).forEach(function (n) {
+    var h = ss.getSheetByName(n);
+    if (!h || hechas[n]) return;
+    try {
+      ORG_ANCHO_FIJO[n].forEach(function (px, i) { h.setColumnWidth(i + 1, px); });
+      hechas[n] = 1;
+    } catch (e) { console.log('Anchos fijos ' + n + ': ' + e.message); }
+  });
+  props.setProperty('ORG_ANCHO_FIJO_OK', JSON.stringify(hechas));
 }
 
 function orgUltimo_(visto, n) {
