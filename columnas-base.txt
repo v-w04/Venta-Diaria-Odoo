@@ -9,7 +9,6 @@ Alertas.gs|importe += num_(f[10]);
 Alertas.gs|if (!num_(f[12])) sinRef++;
 BuscarVentas.gs|sh.getRange(2, 12, filas.length, 2).setNumberFormat('$#,##0.00');
 BuscarVentas.gs|var c = (f[1] === 'NO') ? '#f4cccc' : null;
-CargaPromos.gs|h.getRange(2, cEst, filas.length, 1).setBackgrounds(filas.map(function (f) { return [f[3] === 'LISTO' ? '#d9ead3' : '#fff2cc']; }));
 CorreoCVA.gs|filas.forEach(function (f) { total += num_(f[10]); piezas += num_(f[8]); });
 CorreoCVA.gs|var fd = (f[2] instanceof Date) ? f[2] : new Date(f[2]);
 CorreoCVA.gs|var fecha = isNaN(fd.getTime()) ? String(f[2]).slice(0, 10)
@@ -31,9 +30,7 @@ Killers.gs|String(r[2]).split(',').forEach(function (x) { if (norm_(x)) fijas[no
 Killers.gs|if (norm_(r[0]) && !fijas[norm_(r[0])] && pct_(r[1]) !== '') extra.push([r[0], pct_(r[1]), '', '']);
 Killers.gs|sh.getRange(2, 2, todas.length, 1).setNumberFormat('0.00%');
 Killers.gs|sh.getRange(2, 4, todas.length, 1).setNumberFormat('0.0');
-Killers.gs|sh.getRange(1, 4, 1, 3).setValues([[ENC_K_COM[3], ENC_K_COM[4], ENC_K_COM[5]]]);
 Killers.gs|if (dd[q][4] === '' || dd[q][4] === null) sh.getRange(q + 2, 5).setValue('DJI, NIK, CAN, FUJ');
-Killers.gs|sh.getRange(1, 7).setValue(ENC_K_COM[6]);
 Killers.gs|if (norm_(d9[q9][0]) === 'VIDEOJUEGOS' && (d9[q9][6] === '' || d9[q9][6] === null)) sh.getRange(q9 + 2, 7).setValue('SI');
 Killers.gs|var otros = String(d10[q10][2] || '');
 Killers.gs|sh.getRange(q10 + 2, 3).setValue(otros ? otros + ', Accesorios de Fotografia' : 'Accesorios de Fotografia');
@@ -75,5 +72,4 @@ Precios.gs|if (!esVentaComercial_(f[3], J)) {
 Precios.gs|if (!sku_(r[0]) || !(num_(r[1]) > 0)) return;
 Precios.gs|var ini = fechaK_(r[2]), fin = fechaK_(r[3]);
 Precios.gs|actual: '', negoc: num_(r[1]), cupon: '', recibimos: '', ini: ini, fin: fin,
-PromosKillers.gs|filas.forEach(function (f) { cuenta[f[1]] = (cuenta[f[1]] || 0) + 1; });
 WalmartApi.gs|campos[i][1] + '\n\nActual: ' + (actual ? '(ya hay uno guardado)' : '—') +
