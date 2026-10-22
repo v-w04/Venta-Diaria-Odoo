@@ -20,7 +20,7 @@
  */
 var CW_ENC = ['SKU', 'TIPO', 'KAM', 'DECISIÓN', '% VS MÍNIMO', 'ENTRA (PRECIO + CUPÓN)', 'MÍNIMO APLICABLE',
               'PRECIO EN WALMART', 'CARGA (LO QUE PUBLICAS)', 'DIFERENCIA vs CARGA', 'AVISO',
-              'ESTADO EN WALMART', 'STOCK WALMART', 'PRODUCTO'];
+              'ESTADO EN WALMART', 'STOCK WALMART', 'PRODUCTO', 'CASO WALMART'];
 var CW_BANDA1_DEF = 3, CW_BANDA2_DEF = 10;
 
 /** Cortes de las bandas, en % positivos (3 = "hasta 3% abajo del mínimo"). */
@@ -96,6 +96,8 @@ function compararWalmart_() {
   var act = libro_().getSheetByName(K_ACT);
   if (!act || act.getLastRow() < 2) { return { error: 'KILLERS ACTIVOS está vacía. Corre primero "Traer killers de Site Sheet".' }; }
   var bd = cwBandas_();
+  var casos = {};
+  try { csAsegurarHoja_(); casos = csCasosVigentes_(); } catch (eCs) { logWarn_('CASOS WALMART', 'No se pudo leer', { error: String(eCs && eCs.message || eCs) }); }
 
   // Precios de Walmart por SKU
   var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName(CFG.WM_DASH.HOJA);
@@ -124,6 +126,7 @@ function compararWalmart_() {
   var bm = null;
   try { bm = bajoMinimoDelSite_(); } catch (e) { bm = null; }
   var actCat = [];     // para la hoja CATEGORIA REVISAR
+  var ceros = [];      // killers con el precio en $0 en Walmart (candidatos a caso)
   var cont = { OK: 0, DEJAR: 0, REVISAR: 0, CAMBIO: 0, SINMIN: 0, NOPUB: 0 }, out = [];
   for (var r = 1; r < a.length; r++) {
     var f = a[r], sku = sku_(f[xS]);
@@ -141,6 +144,7 @@ function compararWalmart_() {
       dec = 'NO PUBLICADO EN WALMART'; cont.NOPUB++;
       aviso = w ? 'Walmart tiene el precio en 0' : 'No está en el dashboard';
       wp = w ? w.precio : '';
+      if (w) ceros.push({ sku: sku, producto: xN === undefined ? '' : f[xN] });
     } else {
       wp = w.precio;
       entra = wp + cupon;
@@ -158,10 +162,14 @@ function compararWalmart_() {
       if (Math.abs(dif) >= 1) aviso = wp > carga ? 'Walmart más alto que tu Carga' : 'Walmart más bajo que tu Carga';
     }
     if (avisoVj) aviso = avisoVj + (aviso ? ' · ' + aviso : '');
+    var caso = csTexto_(casos, sku);
+    if (caso) aviso = caso + (aviso ? ' · ' + aviso : '');
     out.push([sku, 'KILLER', kamCat, dec, pct, entra, min || '',
               wp, carga || '', dif, aviso, w ? w.estado : '', w ? w.stock : '',
-              xN === undefined ? '' : f[xN]]);
+              xN === undefined ? '' : f[xN], caso]);
   }
+  try { csDetectarCero_(ceros, casos); } catch (eDet) { logWarn_('CASOS WALMART', 'No se pudo detectar casos', { error: String(eDet && eDet.message || eDet) }); }
+
   // Orden: lo que más baja del mínimo primero; luego avisos; al final los OK
   var peso = function (x) {
     return x[3] === 'CAMBIO / QUITAR' ? 0 : x[3] === 'REVISAR KAM' ? 1 : x[3] === 'DEJAR' ? 2 :

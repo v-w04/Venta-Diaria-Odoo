@@ -61,6 +61,8 @@ var ORG_HOJAS = [
   ['Sobreventa WFS',       'VENTAS',  'Traslados en espera hacia WFS (sobreventa)', 'Auto, cada 30 min'],
   ['Sobreventa Pick',      'VENTAS',  'Traslados en espera de pick (sobreventa)', 'Auto, cada 30 min'],
 
+  ['CASOS WALMART',        'VENTAS',  'Registro e historial de casos con Walmart (folio, SKU, estado, seguimiento, resolución). El script agrega los que detecta; tú llevas el seguimiento', 'Manual (tú la editas)'],
+
   ['PRECIOS ERIK',         'PRECIOS', 'Precio mínimo clásica y premium (EM y CVA) bajado de Site Sheet', 'Auto, cada 15 min'],
   ['EXPORTAR',             'PRECIOS', 'Precios normales para subir a Walmart: SKU WALMART, PRECIO FINAL, PRECIO -2% (× 0.98) y PRECIO CARGA (terminación 9)', 'Auto, cada 15 min'],
   ['MINIMO',               'PRECIOS', 'Precios mínimos para subir a Walmart: SKU WALMART y PRECIO MINIMO', 'Auto, cada 15 min'],
