@@ -98,6 +98,7 @@ function bmGuardarEspejo_(todo) {
       if (iSkuA < 0 && (k === 'SKU WALMART' || k === 'SKU')) iSkuA = i;
     });
     var tope = bmTope_();
+    var pub = bmPublicadosWalmart_();   // {SKU: {stock}} de lo que sigue PUBLICADO en Walmart y no está bloqueado; {} si el dashboard no responde
     var encC = enc.filter(function (x) { return norm_(x) !== norm_(BM_COL_ACCION); }).concat([BM_COL_ACCION]);
     var filasC = todo.slice(1).map(function (f) {
       var base = f.slice(0, enc.length), per = iPerA < 0 ? NaN : bmPorcentaje_(f[iPerA]);
@@ -105,6 +106,7 @@ function bmGuardarEspejo_(todo) {
       if (iSkuA >= 0 && String(f[iSkuA] || '') !== '' && !isNaN(per)) {
         accion = per > tope + 0.0001
           ? 'No entra a ACTIVOS: pérdida mayor a ' + tope + '%' + (iKamA >= 0 && f[iKamA] ? ' (KAM ' + f[iKamA] + ')' : '') + '. El aviso al KAM lo hace Site Sheet'
+            + (pub[sku_(f[iSkuA])] ? ' · REPUBLICAR: sigue PUBLICADO en Walmart con ' + pub[sku_(f[iSkuA])].stock + ' de stock (lo resuelve la lógica de Site Sheet)' : '')
           : 'Nada: pérdida de ' + tope + '% o menos, entra a ACTIVOS';
       }
       return base.concat([accion]);
@@ -121,6 +123,32 @@ function bmGuardarEspejo_(todo) {
       logWarn_('BAJO MINIMO', 'No se pudo guardar la copia local', { error: String(e && e.message || e) });
     });
   }
+}
+
+/**
+ * SKUs que siguen PUBLISHED en el dashboard de Walmart con stock y que NO están en la lista de bloqueados.
+ * Solo sirve para dejar la nota REPUBLICAR en KILLERS BAJO MINIMO; la lógica de republicar vive en Site Sheet.
+ * Devuelve {} si no se pudo leer (la nota simplemente no sale).
+ */
+function bmPublicadosWalmart_() {
+  var out = {};
+  try {
+    var sh = SpreadsheetApp.openById(CFG.WM_DASH.ID).getSheetByName(CFG.WM_DASH.HOJA);
+    if (!sh || sh.getLastRow() < 2) return out;
+    var d = sh.getDataRange().getValues();
+    var m = mapaColumnas_(d[0]), c = function (k) { return m[norm_(k)]; };
+    var iS = c('sku'), iSt = c('publishedStatus'), iT = c('stockTotal'), iMi = c('miEstado');
+    if (iS === undefined || iSt === undefined || iT === undefined) return out;
+    for (var i = 1; i < d.length; i++) {
+      var s = sku_(d[i][iS]);
+      if (!s) continue;
+      var stock = num_(d[i][iT]);
+      if (norm_(d[i][iSt]) === 'PUBLISHED' && stock > 0 && !(iMi !== undefined && norm_(d[i][iMi]) === 'BLOQUEADO')) out[s] = { stock: stock };
+    }
+  } catch (e) {
+    ksAvisarUnaVez_('bm_pub', function () { logWarn_('BAJO MINIMO', 'No se pudo leer el dashboard para la nota REPUBLICAR', { error: String(e && e.message || e) }); });
+  }
+  return out;
 }
 
 /**
